@@ -1,0 +1,17 @@
+# 파이썬 가상환경 (uv sync로 언제든 재생성 가능하므로 올리지 않음)
+.venv/
+
+# 비밀 키와 환경변수. API 키가 들어가므로 절대 커밋 금지
+.env
+
+# 파이썬 캐시와 도구 캐시
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# IDE 설정
+.vscode/
+
+# Claude 작업 지침 (개인 메모와 체크리스트가 들어 있어 공개하지 않음)
+CLAUDE.md

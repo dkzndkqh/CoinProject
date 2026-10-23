@@ -1,0 +1,18 @@
+# 이 파일은 "내 PC에서 필요한 서버들을 한 번에 띄우는 설계도
+# 서비스 이름. 나중에 backend 컨테이너가 이 이름(db)으로 DB에 접속할 수 있음
+services:
+# 사용할 이미지. PostgreSQL 16 공식 이미지, alpine은 용량이 작은 경량 버전
+  db:
+    image: postgres:16-alpine
+# 컨테이너 이름. docker ps 할 때 이 이름으로 보인다    
+    container_name: coin-db
+# backend/.env의 변수(POSTGRES_USER 등)를 컨테이너 환경변수로 주입한다
+    env_file:
+      - backend/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - coin-db-data:/var/lib/postgresql/data
+
+volumes:
+  coin-db-data:
