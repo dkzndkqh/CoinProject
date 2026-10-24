@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import httpx
 
 # 업비트 공개 시세 API 공통 주소 (인증키 필요 없음)
@@ -20,21 +22,40 @@ def _get(path: str, params: dict) -> list[dict]:
         return response.json()
 
 
-def get_minute_candles(market: str, unit: int, count: int) -> list[dict]:
+def _build_params(market: str, count: int, to: datetime | None) -> dict:
+    """캔들 요청에 쓸 쿼리 파라미터를 만드는 내부 함수.
+    to가 None이면 'to' 키를 아예 넣지 않는다 (최신 캔들부터 받기).
+    값이 None인 키를 그대로 보내면 httpx가 'to=' (빈 값)으로 보내서 Upbit가 에러를 낼 수 있기 때문이다.
+    """
+    params = {"market": market, "count": count}
+    if to is not None:
+        # Upbit는 UTC 기준 "2025-01-01T00:00:00Z" 형식의 문자열을 받는다.
+        # astimezone(UTC)로 어떤 시간대의 datetime이 들어와도 UTC로 바꾼 뒤 포맷한다.
+        params["to"] = to.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return params
+
+
+def get_minute_candles(
+    market: str, unit: int, count: int, to: datetime | None = None
+) -> list[dict]:
     """분봉 캔들을 가져온다.
     market: "KRW-BTC", "KRW-ETH" 같은 마켓 코드
     unit:   분 단위. Upbit가 지원하는 값은 1, 3, 5, 10, 15, 30, 60, 240
     count:  가져올 개수. Upbit 최대값은 200. 기본값이 없으므로 호출하는 쪽이 반드시 정한다.
+    to:     이 시각 '이전'의 캔들을 가져온다 (이 시각의 캔들은 제외). None이면 최신부터.
+            과거 데이터를 채우는 백필에서 한 번에 200개씩 거슬러 올라갈 때 쓴다.
 
     주의: Upbit는 최신 캔들이 맨 앞(리스트 0번)에 오는 내림차순으로 준다.
     지표 계산은 과거 -> 최신 순서가 필요하므로, 나중에 service에서 뒤집는다.
     """
-    return _get(f"/candles/minutes/{unit}", {"market": market, "count": count})
+    return _get(f"/candles/minutes/{unit}", _build_params(market, count, to))
 
 
-def get_daily_candles(market: str, count: int) -> list[dict]:
+def get_daily_candles(
+    market: str, count: int, to: datetime | None = None
+) -> list[dict]:
     """일봉 캔들을 가져온다."""
-    return _get("/candles/days", {"market": market, "count": count})
+    return _get("/candles/days", _build_params(market, count, to))
 
 
 def get_tickers(markets: list[str]) -> list[dict]:
