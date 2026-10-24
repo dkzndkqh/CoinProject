@@ -1,6 +1,5 @@
-import time
 import itertools
-
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -9,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.core.db import SessionLocal
 from app.market import service
 from app.market.models import Candle
-
 
 # 백필 대상. 코인이나 봉 종류를 바꾸려면 여기만 고친다.
 MARKETS = ["KRW-BTC", "KRW-ETH"]
