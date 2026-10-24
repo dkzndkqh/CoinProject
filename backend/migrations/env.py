@@ -1,19 +1,16 @@
 # 우리 앱의 설정(.env의 DATABASE_URL)과 모델 기반 클래스를 가져온다.
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+
 from app.core.config import settings
 from app.core.db import Base
 
 # 중요: 모델 파일을 임포트해야 Alembic이 그 안의 테이블을 인식한다.
 # 임포트하지 않은 models.py의 클래스는 Base에 등록되지 않아서 테이블이 생성되지 않는다.
 # 새 도메인의 models.py를 만들 때마다 여기에 한 줄씩 추가해야 한다.
-# noqa: F401 = "쓰이지 않는 임포트라는 린트 경고를 무시"한다는 뜻이다.
 from app.market import models  # noqa: F401
-
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -81,9 +78,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
