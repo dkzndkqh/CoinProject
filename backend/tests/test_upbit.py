@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import httpx
 import pytest
 
@@ -47,3 +49,11 @@ def test_티커는_markets_파라미터에_콤마로_이어_붙인다(captured):
 
     assert captured[0]["url"] == "/ticker"
     assert captured[0]["params"] == {"markets": "KRW-BTC,KRW-ETH"}
+
+
+def test_to를_주면_UTC_문자열로_바꿔_보낸다(captured):
+    """[시간대 변환 테스트] ..."""
+    kst = timezone(timedelta(hours=9))
+    upbit.get_minute_candles("KRW-BTC", 60, 3, datetime(2025, 1, 1, 9, 0, tzinfo=kst))
+
+    assert captured[0]["params"]["to"] == "2025-01-01T00:00:00Z"
