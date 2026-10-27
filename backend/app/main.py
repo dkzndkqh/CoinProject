@@ -9,6 +9,7 @@ from app.market.collector import (
     collect_latest,
     recover_recent,
 )
+from app.market.router import router as market_router
 
 # 앱 전체 로그 설정. 이게 없으면 남기는 logger.info가 화면에 안 보인다.
 logging.basicConfig(
@@ -30,4 +31,9 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()  # 종료할 때 스케줄러도 멈춘다.
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="Coin Agent API",
+    description="BTC, ETH 분석 및 가격예측 AI 에이전트",
+)
+app.include_router(market_router)
