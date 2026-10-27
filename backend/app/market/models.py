@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, func
+from sqlalchemy import DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -53,6 +53,42 @@ class Candle(Base):
     # 진행 중인 캔들의 close는 "현재가"인데, 그 값이 몇 시 기준인지 알려주는 역할이다.
     # server_default=func.now(): 값을 안 넣으면 DB가 현재 시각을 자동으로 채운다.
     # upsert로 덮어쓸 때는 저장 코드가 이 값을 지금 시각으로 직접 갱신한다.
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class MarketSnapshot(Base):
+    """시장 지표 스냅샷 한 개 = 테이블 한 행.
+    캔들이 '구간의 OHLCV'라면 이것은 '이 시각의 값'이다.
+    15분마다 코인별로 한 행씩 쌓이고, 에이전트가 최신 행과 과거 행의 변화를 읽는다.
+    """
+
+    __tablename__ = "market_snapshots"
+
+    # --- 기본 키 : market + snapshot_time 복합키 ---
+    # 같은 코인, 같은 시각의 스냅샷은 한 행만 존재 (재수집하면 덮어쓰기)
+    market: Mapped[str] = mapped_column(String(20), primary_key=True)
+
+    # snapshot_time: 수집 시각을 15분 단위로 내린 값 (예: 12:07에 수집 -> 12:00).
+    # 실제 수집 시각이 매번 조금씩 달라도 시간 칸이 일정하게 맞춰져서 캔들과 비교하기 쉽다.
+    snapshot_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+
+    # --- 지표 값 ---
+    # Mapped[float | None]: "float 또는 None"이라는 뜻이고, DB 컬럼이 NULL을 허용한다.
+    # 자바에서 Double(래퍼 타입, null 가능)을 쓰는 것과 같다. double(기본형)은 null이 안 된다.
+    # 외부 API 하나가 실패해도 나머지 값은 저장해야 하므로 지표 컬럼은 모두 NULL을 허용한다.
+
+    # 미결제약정: 아직 청산되지 않은 선물 계약 총량 (코인 개수 기준, 바이낸스)
+    open_interest: Mapped[float | None] = mapped_column(Float)
+    # 롱숏 비율: 전체 계정 기준 롱 계정 수 / 숏 계정 수 (바이낸스)
+    long_short_ratio: Mapped[float | None] = mapped_column(Float)
+    # 공포·탐욕 지수: 0(극단적 공포) ~ 100(극단적 탐욕). 코인 공통값이라 BTC, ETH 행에 같은 값을 넣는다.
+    fear_greed: Mapped[int | None] = mapped_column(Integer)
+
+    # 실제로 값을 받아 저장한 시각 (candles의 fetched_at과 같은 역할)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

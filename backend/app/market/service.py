@@ -1,12 +1,15 @@
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.clients import upbit
+from app.clients import alternative, binance, upbit
 from app.market import indicators
-from app.market.models import Candle
+from app.market.models import Candle, MarketSnapshot
+
+logger = logging.getLogger(__name__)
 
 # timeframe 이름 -> 업비트 분봉 단위(분). 1d는 분봉이 아니라 일봉 API를 따로 쓴다.
 # 지원할 봉 종류를 추가하려면 여기에 한 줄만 넣으면 된다.
@@ -14,6 +17,9 @@ from app.market.models import Candle
 MINUTE_UNITS = {"1h": 60, "4h": 240}
 
 INDICATOR_TIMEFRAMES = ("4h", "1d")  # 지표 판정 봉
+
+# 우리 마켓 코드 -> 바이낸스 선물 심볼. 외부 API 형식은 service가 우리 용어로 번역한다.
+BINANCE_SYMBOLS = {"KRW-BTC": "BTCUSDT", "KRW-ETH": "ETHUSDT"}
 
 
 def fetch_candles(
@@ -105,3 +111,89 @@ def get_indicator_judgement(db: Session, market: str) -> dict | None:
             return None
         result[timeframe] = indicators.judge_indicators(indicators.add_indicators(df))
     return result
+
+
+def floor_time(dt: datetime, minutes: int) -> datetime:
+    """시각을 minutes 단위로 내린다. 15분이면 12:07 -> 12:00, 12:29 -> 12:15.
+    스냅샷의 snapshot_time을 일정한 칸에 맞추려는 것이다 (재수집하면 같은 칸을 덮어쓴다).
+    minutes는 60의 약수(5, 10, 15, 30)일 때만 맞다.
+    """
+    return dt.replace(minute=dt.minute - dt.minute % minutes, second=0, microsecond=0)
+
+
+def _safe(label: str, fetch):
+    """외부 API 호출 하나를 안전하게 감싼다. 실패하면 로그를 남기고 None을 돌려준다.
+    fetch는 '인자 없이 호출하는 함수'다 (자바의 Supplier<T>, 람다 () -> ... 와 같다).
+    소스 하나가 실패해도 다른 소스와 캔들 수집이 멈추지 않게 하려는 것이다.
+    """
+
+    try:
+        return fetch()
+    except Exception:
+        logger.exception("스냅샷 수집 실패: %s", label)
+        return None
+
+
+def fetch_snapshot_rows(markets: list[str], snapshot_time: datetime) -> list[dict]:
+    """코인마다 스냅샷 한 행(dict)을 만든다. 실패한 값은 None(DB에서 NULL)으로 둔다.
+    바이낸스의 숫자는 문자열("97714.439")로 오기 때문에 float, int로 바꾼다.
+    변환(parse)도 _safe 안에서 하므로, 응답 모양이 바뀌어도 이 값만 None이 되고 나머지는 저장된다.
+    """
+    # 공포, 탐욕은 공통 값이라 한번만 받아서 모든행에 넣기
+    fear_greed = _safe("fear_greed", lambda: int(alternative.get_fear_greed()["value"]))
+
+    rows = []
+    for market in markets:
+        symbol = BINANCE_SYMBOLS[market]
+        rows.append(
+            {
+                "market": market,
+                "snapshot_time": snapshot_time,
+                "open_interest": _safe(
+                    f"open_interest {symbol}",
+                    lambda symbol=symbol: float(
+                        binance.get_open_interest(symbol)["openInterest"]
+                    ),
+                ),
+                "long_short_ratio": _safe(
+                    f"long_short_ratio {symbol}",
+                    lambda symbol=symbol: float(
+                        binance.get_long_short_ratio(symbol)["longShortRatio"]
+                    ),
+                ),
+                "fear_greed": fear_greed,
+            }
+        )
+    return rows
+
+
+def save_snapshots(db: Session, rows: list[dict]) -> int:
+    """스냅샷들을 DB에 저장한다 (upsert). 저장한 행 수를 돌려준다.
+    같은 (market, snapshot_time)이 있으면 덮어쓴다. save_candles와 같은 방식이다.
+    """
+    if not rows:
+        return 0
+    stmt = insert(MarketSnapshot).values(rows)
+
+    # coalesce(새 값, 기존 값): 새 값이 NULL이면 기존 값을 그대로 둔다.
+    # 같은 칸을 다시 수집했는데 이번에는 한 소스가 실패해서 NULL이 온 경우,
+    # 먼저 저장된 정상 값을 NULL로 덮어써서 지우는 일을 막으려는 것이다.
+
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["market", "snapshot_time"],
+        set_={
+            "open_interest": func.coalesce(
+                stmt.excluded.open_interest, MarketSnapshot.open_interest
+            ),
+            "long_short_ratio": func.coalesce(
+                stmt.excluded.long_short_ratio, MarketSnapshot.long_short_ratio
+            ),
+            "fear_greed": func.coalesce(
+                stmt.excluded.fear_greed, MarketSnapshot.fear_greed
+            ),
+            "fetched_at": func.now(),
+        },
+    )
+    db.execute(stmt)
+    db.commit()
+    return len(rows)

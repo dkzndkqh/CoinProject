@@ -72,3 +72,22 @@ def recover_recent() -> None:
         logger.info("복구 완료 (%s부터)", start)
     finally:
         db.close()
+
+
+def collect_snapshots() -> None:
+    """15분마다 호출된다. 코인별 시장 지표(미결제약정, 롱숏 비율, 공포·탐욕)를 받아 저장한다.
+    캔들 수집(collect_latest)과 별도 작업으로 돌려서, 한쪽이 느려지거나 실패해도 서로 영향이 없다.
+    """
+    db = SessionLocal()
+    try:
+        # 지금 시각을 수집 주기(15분) 칸에 맞춰 내린다. 12:07 -> 12:00
+        snapshot_time = service.floor_time(datetime.now(UTC), COLLECT_INTERVAL_MINUTES)
+        rows = service.fetch_snapshot_rows(MARKETS, snapshot_time)
+        service.save_snapshots(db, rows)
+        logger.info("바이낸스 데이터 스냅샷 수집 완료 (%s)", snapshot_time)
+    except Exception:
+        # 저장 단계의 예외 (DB 오류 등). 다음 주기에 다시 시도한다.
+        logger.exception("바이낸스 데이터 스냅샷 저장 실패")
+        db.rollback()
+    finally:
+        db.close()
