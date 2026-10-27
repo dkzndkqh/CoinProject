@@ -66,6 +66,7 @@ def test_지원하지_않는_코인이면_404(monkeypatch):
     response = client.get("/api/market/doge/indicators")
 
     assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
 def test_캔들_데이터가_없으면_404(monkeypatch):
@@ -75,3 +76,4 @@ def test_캔들_데이터가_없으면_404(monkeypatch):
     response = client.get("/api/market/btc/indicators")
 
     assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
