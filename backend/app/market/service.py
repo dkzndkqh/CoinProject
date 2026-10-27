@@ -5,12 +5,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.clients import upbit
+from app.market import indicators
 from app.market.models import Candle
 
 # timeframe 이름 -> 업비트 분봉 단위(분). 1d는 분봉이 아니라 일봉 API를 따로 쓴다.
 # 지원할 봉 종류를 추가하려면 여기에 한 줄만 넣으면 된다.
 
 MINUTE_UNITS = {"1h": 60, "4h": 240}
+
+INDICATOR_TIMEFRAMES = ("4h", "1d") # 지표 판정 봉 
 
 
 def fetch_candles(
@@ -85,3 +88,20 @@ def save_candles(db: Session, timeframe: str, raw_candles: list[dict]) -> int:
     db.execute(stmt)
     db.commit()  # 여기서 확정(커밋)한다. 실패하면 예외가 나고 아무것도 저장되지 않는다.
     return len(rows)
+
+
+def get_indicator_judgement(db: Session, market: str) -> dict | None:
+    """코인 하나의 4h/1d 지표 판정을 돌려준다. 에이전트(3단계)도 이 함수를 그대로 쓴다.
+    흐름: DB 캔들 로드(결측 보정) -> 지표 계산 -> 판정 dict.
+    반환: {"market": "KRW-BTC", "4h": {...}, "1d": {...}}
+        캔들이 모자란 market이면 None (router가 404로 바꾼다).
+    `dict | None`은 "dict 또는 None"이라는 타입 표기다 (자바의 Optional<Map>과 비슷).
+    """
+    result = {"market": market}
+    for timeframe in INDICATOR_TIMEFRAMES:
+        df = indicators.load_candles_df(db, market, timeframe)
+        # judge_indicators는 최소 3개 행(iloc[-3])이 필요하다. 그보다 적으면 판정할 수 없다.
+        if len(df) < 3:
+            return None
+        result[timeframe] = indicators.judge_indicators(indicators.add_indicators(df))
+    return result  
