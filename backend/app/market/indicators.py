@@ -9,7 +9,8 @@ from app.market.models import Candle
 # 지표는 4h, 1d만 쓰기로 했으므로 둘만 둔다 (1h는 지표에 쓰지 않는다).
 FREQ = {"4h": "4h", "1d": "1D"}
 
-# DB에서 캔들 읽고 난 후 데이터프레임에 맞춰서 데이터 가공 후 결측 보정 
+# DB에서 캔들 읽고 난 후 데이터프레임에 맞춰서 데이터 가공 후 결측 보정
+
 
 def load_candles_df(db: Session, market: str, timeframe: str) -> pd.DataFrame:
     """DB에서 캔들을 읽어 pandas DataFrame으로 돌려준다.
@@ -19,34 +20,42 @@ def load_candles_df(db: Session, market: str, timeframe: str) -> pd.DataFrame:
     """
     # 1) 조회. SQL의 SELECT * FROM candles WHERE ... ORDER BY candle_time 과 같다.
     #    자바 JPA의 findByMarketAndTimeframeOrderByCandleTime() 정도에 해당한다.
-    stmt = (select(Candle).where(Candle.market == market, Candle.timeframe == timeframe).order_by(Candle.candle_time))
-    candles = db.scalars(stmt).all() # Candle 객체 리스트 (자바의 List<Candle>)
+    stmt = (
+        select(Candle)
+        .where(Candle.market == market, Candle.timeframe == timeframe)
+        .order_by(Candle.candle_time)
+    )
+    candles = db.scalars(stmt).all()  # Candle 객체 리스트 (자바의 List<Candle>)
 
     # 2) 객체 리스트 -> DataFrame.
     #    DataFrame은 엑셀 표처럼 행/열이 있는 자료구조다.
     #    자바에는 딱 맞는 표준 클래스가 없고, 컬럼 단위 연산이 가능한 List<Row> 정도로 생각하면 된다.
     #    [ {...}, {...} ] 형태의 dict 리스트를 주면 키가 컬럼 이름이 된다.
-    
-    df = pd.DataFrame([
-        {
-            "candle_time" : c.candle_time,
-            "open": c.open,
-            "high": c.high,
-            "low": c.low,
-            "close": c.close,
-            "volume": c.volume,
-        }
-        for c in candles
-    ])
+
+    df = pd.DataFrame(
+        [
+            {
+                "candle_time": c.candle_time,
+                "open": c.open,
+                "high": c.high,
+                "low": c.low,
+                "close": c.close,
+                "volume": c.volume,
+            }
+            for c in candles
+        ]
+    )
     if df.empty:
-        return df # 데이터가 없으면 그대로 돌려준다
+        return df  # 데이터가 없으면 그대로 돌려준다
 
     # 3) candle_time을 인덱스(행 이름표)로 쓴다. 시간으로 행을 찾고 정렬하기 위함이다.
     df = df.set_index("candle_time")
 
     # 4) 빠짐없는 시간 격자를 만든다. 첫 캔들 ~ 마지막 캔들 사이를 4h(또는 1D) 간격으로 전부 나열한다.
     #    예: 00:00, 04:00, 08:00, ... 중에 DB에 없는 시각이 있으면 아래 reindex가 빈 행을 만든다.
-    full_index = pd.date_range(df.index[0], df.index[-1], freq=FREQ[timeframe], name="candle_time")
+    full_index = pd.date_range(
+        df.index[0], df.index[-1], freq=FREQ[timeframe], name="candle_time"
+    )
 
     # 5) reindex: 인덱스를 full_index에 맞춘다. 있는 행은 그대로, 없는 시각은 NaN(빈 값) 행이 생긴다.
     df = df.reindex(full_index)
@@ -62,7 +71,9 @@ def load_candles_df(db: Session, market: str, timeframe: str) -> pd.DataFrame:
 
     return df
 
+
 # 지표 계산 (RSI, MACD, 볼린저밴드, 이동평균, 거래량)
+
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """캔들 표에 지표 컬럼을 추가해서 돌려준다.
@@ -71,7 +82,7 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     df = df.copy()
-    close = df["close"] #종가 컬럼 
+    close = df["close"]  # 종가 컬럼
 
     # ---이동평균 (SMA) : 최근 N개의 종가의 평균 ---
     # rolling(20): 맨 아래 20개씩 창(window)를 밀면서 보겠다.
@@ -85,8 +96,8 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     delta = close.diff()
 
     # 2) 오른 날의 상승폭, 내린 날의 하락폭 분리 (clip: 범위 밖 값을 잘라냄)
-    gain = delta.clip(lower=0) # 하락은 0으로
-    loss = -delta.clip(upper=0) # 상승은 0으로, 하락은 양수로 바꿔서 
+    gain = delta.clip(lower=0)  # 하락은 0으로
+    loss = -delta.clip(upper=0)  # 상승은 0으로, 하락은 양수로 바꿔서
 
     # 3) 평균 상승폭 / 평균 하락폭. RSI 표준은 Wilder 평활법이라 ewm(alpha=1/14)를 쓴다.
     #    ewm = 지수가중이동평균: 최근 값에 더 큰 가중치를 준다.
@@ -123,8 +134,8 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     def _mid(n: int) -> pd.Series:
         return (df["high"].rolling(n).max() + df["low"].rolling(n).min()) / 2
 
-    df["tenkan"] = _mid(9)    # 전환선: 단기 중심선
-    df["kijun"] = _mid(26)    # 기준선: 중기 중심선
+    df["tenkan"] = _mid(9)  # 전환선: 단기 중심선
+    df["kijun"] = _mid(26)  # 기준선: 중기 중심선
 
     # 선행스팬은 계산한 값을 "26칸 미래"에 그린다. 그래서 shift(26)을 쓴다.
     # shift(26): 값을 26행 아래로 민다. 즉 t행에는 26개 전에 계산된 값이 들어간다.
@@ -138,6 +149,7 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["chikou"] = df["close"].shift(-26)
 
     return df
+
 
 def _missing(*values) -> bool:
     """값 중 하나라도 NaN이면 True. 판정에 쓸 수 없다는 뜻이다.
@@ -218,8 +230,10 @@ def judge_indicators(df: pd.DataFrame) -> dict:
         vol_state = "보통"
 
     # --- 일목균형표: 현재가의 구름 위치 + 전환선/기준선 관계 ---
-    top = max(last["senkou_a"], last["senkou_b"])      # 구름 상단
-    bottom = min(last["senkou_a"], last["senkou_b"])   # 구름 하단 (NaN이 섞이면 아래에서 걸러진다)
+    top = max(last["senkou_a"], last["senkou_b"])  # 구름 상단
+    bottom = min(
+        last["senkou_a"], last["senkou_b"]
+    )  # 구름 하단 (NaN이 섞이면 아래에서 걸러진다)
     if _missing(last["senkou_a"], last["senkou_b"]):
         cloud_state = "데이터 부족"
     elif price > top:
@@ -231,16 +245,26 @@ def judge_indicators(df: pd.DataFrame) -> dict:
     if _missing(last["tenkan"], last["kijun"]):
         tk_state = "데이터 부족"
     else:
-        tk_state = "전환선이 기준선 위" if last["tenkan"] > last["kijun"] else "전환선이 기준선 아래"
+        tk_state = (
+            "전환선이 기준선 위"
+            if last["tenkan"] > last["kijun"]
+            else "전환선이 기준선 아래"
+        )
 
     return {
         "price": float(price),
-        "price_time": df.index[-1].isoformat(),    # 현재가 기준 시각
-        "basis_time": df.index[-2].isoformat(),    # 지표 판정에 쓴 마감 캔들 시각
-        "rsi": {"value": None if _missing(rsi) else round(float(rsi), 1), "state": rsi_state},
+        "price_time": df.index[-1].isoformat(),  # 현재가 기준 시각
+        "basis_time": df.index[-2].isoformat(),  # 지표 판정에 쓴 마감 캔들 시각
+        "rsi": {
+            "value": None if _missing(rsi) else round(float(rsi), 1),
+            "state": rsi_state,
+        },
         "macd": {"state": macd_state},
         "bollinger": {"state": bb_state},
         "moving_average": {"alignment": ma_state, "vs_ma200": ma200_state},
-        "volume": {"ratio": None if _missing(vol) else round(float(vol), 2), "state": vol_state},
+        "volume": {
+            "ratio": None if _missing(vol) else round(float(vol), 2),
+            "state": vol_state,
+        },
         "ichimoku": {"cloud": cloud_state, "tenkan_kijun": tk_state},
     }

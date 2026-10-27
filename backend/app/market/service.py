@@ -13,7 +13,7 @@ from app.market.models import Candle
 
 MINUTE_UNITS = {"1h": 60, "4h": 240}
 
-INDICATOR_TIMEFRAMES = ("4h", "1d") # 지표 판정 봉 
+INDICATOR_TIMEFRAMES = ("4h", "1d")  # 지표 판정 봉
 
 
 def fetch_candles(
@@ -104,4 +104,4 @@ def get_indicator_judgement(db: Session, market: str) -> dict | None:
         if len(df) < 3:
             return None
         result[timeframe] = indicators.judge_indicators(indicators.add_indicators(df))
-    return result  
+    return result
