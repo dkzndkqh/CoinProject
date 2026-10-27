@@ -19,7 +19,24 @@ jobs:
       run:
         working-directory: backend
 
-    # .env 대신 환경변수로 설정값을 준다. 이 DB 주소는 가짜다 (테스트는 DB에 접속하지 않는다).
+    # services: 이 job이 도는 동안 같이 띄워 둘 컨테이너. 로컬 docker-compose의 db와 같은 이미지다.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dbname
+        ports:
+          - 5432:5432
+        # DB가 접속 가능해질 때까지 steps 실행을 기다리게 한다 (이게 없으면 DB 준비 전에 테스트가 먼저 돌 수 있다).
+        options: >-
+          --health-cmd "pg_isready -U user -d dbname"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # 앱 설정은 .env 대신 환경변수로 준다. 위 services의 DB를 가리킨다.
     # pydantic-settings는 .env 파일이 없으면 환경변수에서 읽는다.
     env:
       DATABASE_URL: postgresql+psycopg://user:password@localhost:5432/dbname
@@ -42,5 +59,9 @@ jobs:
       # 5) 포맷 검사: 파일을 고치지 않고 형식만 확인 (--check)
       - run: uv run ruff format --check .
 
-      # 6) 테스트
+      # 6) DB 테이블 생성. 로컬에서 직접 하던 alembic upgrade head를 CI에서도 실행한다.
+      #    (마이그레이션이 깨지면 여기서 실패하므로 검증 효과도 있다)
+      - run: uv run alembic upgrade head
+
+      # 7) 테스트
       - run: uv run pytest -q
