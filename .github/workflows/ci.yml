@@ -1,0 +1,67 @@
+# 이 워크플로의 이름. GitHub의 Actions 탭과 PR 체크 목록에 이 이름으로 표시된다.
+name: CI
+
+# 언제 실행할지. main으로 가는 PR이 올라오거나 갱신될 때, main에 push될 때 실행한다.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # job 하나 = 가상 컴퓨터 한 대에서 도는 작업 묶음. 이름(test)은 우리가 정한다.
+  test:
+    # 실행할 가상 컴퓨터 종류. 리눅스(ubuntu)가 가장 빠르고 무료 한도도 넉넉하다.
+    runs-on: ubuntu-latest
+
+    # 모든 run 명령을 backend 폴더 안에서 실행한다. (pyproject.toml과 uv.lock이 거기 있다.)
+    defaults:
+      run:
+        working-directory: backend
+
+    # services: 이 job이 도는 동안 같이 띄워 둘 컨테이너. 로컬 docker-compose의 db와 같은 이미지다.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dbname
+        ports:
+          - 5432:5432
+        # DB가 접속 가능해질 때까지 steps 실행을 기다리게 한다 (이게 없으면 DB 준비 전에 테스트가 먼저 돌 수 있다).
+        options: >-
+          --health-cmd "pg_isready -U user -d dbname"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # 앱 설정은 .env 대신 환경변수로 준다. 위 services의 DB를 가리킨다.
+    # pydantic-settings는 .env 파일이 없으면 환경변수에서 읽는다.
+    env:
+      DATABASE_URL: postgresql+psycopg://user:password@localhost:5432/dbname
+
+    # steps: 위에서 아래로 차례대로 실행한다. 한 단계라도 실패하면 거기서 멈추고 전체가 실패 처리된다.
+    steps:
+      # 1) 저장소 코드를 가상 컴퓨터에 내려받는다. (uses: 남이 만든 재사용 가능한 동작을 가져다 쓴다)
+      - uses: actions/checkout@v4
+
+      # 2) uv 설치. 파이썬 버전은 pyproject.toml(requires-python)에 맞춰 uv가 알아서 맞춘다.
+      - uses: astral-sh/setup-uv@v5
+
+      # 3) 의존성 설치. uv.lock에 적힌 정확한 버전으로 가상환경을 만든다.
+      #    --locked: lock 파일과 pyproject가 어긋나 있으면 실패시켜 준다.
+      - run: uv sync --locked
+
+      # 4) 코드 검사: 문법·규칙 위반 (ruff check)
+      - run: uv run ruff check .
+
+      # 5) 포맷 검사: 파일을 고치지 않고 형식만 확인 (--check)
+      - run: uv run ruff format --check .
+
+      # 6) DB 테이블 생성. 로컬에서 직접 하던 alembic upgrade head를 CI에서도 실행한다.
+      #    (마이그레이션이 깨지면 여기서 실패하므로 검증 효과도 있다)
+      - run: uv run alembic upgrade head
+
+      # 7) 테스트
+      - run: uv run pytest -q
