@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.exceptions import NotFoundError
 from app.market import service
 
 # APIRouter: URL 묶음. 스프링 컨트롤러 클래스에 붙이는 @RequestMapping("/api/market")과 같다.
@@ -36,13 +37,11 @@ def get_indicators(
     market = MARKETS.get(coin.lower())  # dict.get: 없으면 예외 대신 None을 돌려준다
 
     if market is None:
-        # HTTPException: 스프링의 ResponseStatusException과 같다. 404 = 없는 코인.
-        raise HTTPException(
-            status_code=404, detail="지원하지 않는 코인입니다 (btc, eth)"
-        )
+        # 서비스/라우터는 상태 코드(404)를 모른다. 이 에러가 404가 되는 건 NotFoundError 클래스와 전역 핸들러가 정한다.
+        raise NotFoundError("지원하지 않는 코인입니다 (btc, eth)")
 
     result = service.get_indicator_judgement(db, market)
 
     if result is None:
-        raise HTTPException(status_code=404, detail="캔들 데이터가 아직 없습니다")
+        raise NotFoundError("캔들 데이터가 아직 없습니다")
     return result  # dict를 돌려주면 FastAPI가 JSON으로 바꿔 응답한다
