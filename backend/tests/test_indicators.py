@@ -13,6 +13,7 @@ NAN = float("nan")
 
 # ─────────────── 가짜 DB와 데이터 만들기 도구 ───────────────
 
+
 class FakeDB:
     """load_candles_df가 db.scalars(stmt).all() 만 쓰므로, 그 모양만 흉내 낸 가짜 세션.
     진짜 DB 없이 테스트하려는 것이다. 자바의 Mockito mock이나 손으로 만든 Stub 클래스와 같은 역할이다.
@@ -33,19 +34,26 @@ def make_candle(hour, close, volume=5.0):
     SimpleNamespace는 필드만 있는 임시 객체다 (자바의 간단한 DTO/record와 비슷)."""
     return SimpleNamespace(
         candle_time=datetime(2025, 1, 1, hour, tzinfo=UTC),
-        open=close, high=close, low=close, close=close, volume=volume,
+        open=close,
+        high=close,
+        low=close,
+        close=close,
+        volume=volume,
     )
 
 
 def make_close_df(closes):
     """종가 목록만 주면 4시간 간격 캔들 표(DataFrame)를 만든다. add_indicators 입력용.
     시/고/저/종가를 모두 같은 값으로 둬서 종가 기반 지표(RSI, 볼린저)를 손계산하기 쉽게 한다."""
-    index = pd.date_range("2025-01-01", periods=len(closes), freq="4h", tz="UTC", name="candle_time")
+    index = pd.date_range(
+        "2025-01-01", periods=len(closes), freq="4h", tz="UTC", name="candle_time"
+    )
     s = pd.Series(closes, index=index, dtype=float)
     return pd.DataFrame({"open": s, "high": s, "low": s, "close": s, "volume": 1.0})
 
 
 # ─────────────── load_candles_df: 결측 보정 ───────────────
+
 
 def test_결측_캔들은_직전_종가와_거래량_0으로_채워진다():
     """00:00, 04:00, 12:00만 있고 08:00이 빠진 가짜 데이터.
@@ -54,13 +62,13 @@ def test_결측_캔들은_직전_종가와_거래량_0으로_채워진다():
 
     df = load_candles_df(db, "KRW-BTC", "4h")
 
-    assert len(df) == 4                      # 3개 -> 빈 칸이 채워져 4개
-    missing = df.iloc[2]                     # iloc[2] = 위에서 세 번째 행 (인덱스는 0부터)
-    assert df.index[2].hour == 8             # 새로 생긴 행이 08:00인지
-    assert missing["close"] == 110.0         # 직전 종가로 채움
+    assert len(df) == 4  # 3개 -> 빈 칸이 채워져 4개
+    missing = df.iloc[2]  # iloc[2] = 위에서 세 번째 행 (인덱스는 0부터)
+    assert df.index[2].hour == 8  # 새로 생긴 행이 08:00인지
+    assert missing["close"] == 110.0  # 직전 종가로 채움
     assert missing["open"] == missing["high"] == missing["low"] == 110.0
-    assert missing["volume"] == 0            # 거래 없음
-    assert df.iloc[3]["close"] == 130.0      # 뒤의 진짜 캔들은 그대로
+    assert missing["volume"] == 0  # 거래 없음
+    assert df.iloc[3]["close"] == 130.0  # 뒤의 진짜 캔들은 그대로
 
 
 def test_캔들이_없으면_빈_표를_돌려준다():
@@ -68,6 +76,7 @@ def test_캔들이_없으면_빈_표를_돌려준다():
 
 
 # ─────────────── add_indicators: 손계산 값과 비교 ───────────────
+
 
 def test_RSI_손계산_값():
     """종가 100 -> 110 -> 100.
@@ -104,9 +113,20 @@ def test_add_indicators는_원본을_바꾸지_않는다():
 
 # 기본 행: 모든 지표가 "중립/정상" 판정이 나오는 값. 테스트마다 바꿀 칸만 덮어쓴다.
 BASE = {
-    "close": 100.0, "rsi": 50.0, "macd_hist": 1.0, "bb_upper": 110.0, "bb_lower": 90.0,
-    "ma5": 120.0, "ma20": 110.0, "ma60": 100.0, "ma200": 90.0, "vol_ratio": 1.0,
-    "senkou_a": 95.0, "senkou_b": 90.0, "tenkan": 101.0, "kijun": 100.0,
+    "close": 100.0,
+    "rsi": 50.0,
+    "macd_hist": 1.0,
+    "bb_upper": 110.0,
+    "bb_lower": 90.0,
+    "ma5": 120.0,
+    "ma20": 110.0,
+    "ma60": 100.0,
+    "ma200": 90.0,
+    "vol_ratio": 1.0,
+    "senkou_a": 95.0,
+    "senkou_b": 90.0,
+    "tenkan": 101.0,
+    "kijun": 100.0,
 }
 
 
@@ -122,7 +142,13 @@ def make_judge_df(prev=None, last=None, now=None):
 # parametrize: 같은 테스트를 입력값만 바꿔 여러 번 실행한다 (JUnit @ParameterizedTest + @CsvSource).
 @pytest.mark.parametrize(
     "rsi, expected",
-    [(70, "과매수"), (69.9, "중립"), (30, "과매도"), (30.1, "중립"), (NAN, "데이터 부족")],
+    [
+        (70, "과매수"),
+        (69.9, "중립"),
+        (30, "과매도"),
+        (30.1, "중립"),
+        (NAN, "데이터 부족"),
+    ],
 )
 def test_RSI_판정_경계값(rsi, expected):
     result = judge_indicators(make_judge_df(last={"rsi": rsi}))
@@ -131,7 +157,13 @@ def test_RSI_판정_경계값(rsi, expected):
 
 @pytest.mark.parametrize(
     "ratio, expected",
-    [(1.5, "급증"), (1.49, "보통"), (0.5, "감소"), (0.51, "보통"), (NAN, "데이터 부족")],
+    [
+        (1.5, "급증"),
+        (1.49, "보통"),
+        (0.5, "감소"),
+        (0.51, "보통"),
+        (NAN, "데이터 부족"),
+    ],
 )
 def test_거래량_판정_경계값(ratio, expected):
     result = judge_indicators(make_judge_df(last={"vol_ratio": ratio}))
@@ -141,7 +173,7 @@ def test_거래량_판정_경계값(ratio, expected):
 @pytest.mark.parametrize(
     "prev_hist, last_hist, expected",
     [
-        (-1.0, 0.0, "골든크로스"),      # 경계: 0이 되는 순간도 크로스로 본다 (0 <= x)
+        (-1.0, 0.0, "골든크로스"),  # 경계: 0이 되는 순간도 크로스로 본다 (0 <= x)
         (-1.0, 1.0, "골든크로스"),
         (0.0, -1.0, "데드크로스"),
         (1.0, 2.0, "시그널선 위 (상승 우위)"),
@@ -186,10 +218,17 @@ def test_구름이_NaN이면_데이터_부족():
 
 
 def test_이동평균_배열_판정():
-    assert judge_indicators(make_judge_df())["moving_average"]["alignment"] == "정배열 (상승 추세)"
-    reverse = judge_indicators(make_judge_df(last={"ma5": 90.0, "ma20": 95.0, "ma60": 100.0}))
+    assert (
+        judge_indicators(make_judge_df())["moving_average"]["alignment"]
+        == "정배열 (상승 추세)"
+    )
+    reverse = judge_indicators(
+        make_judge_df(last={"ma5": 90.0, "ma20": 95.0, "ma60": 100.0})
+    )
     assert reverse["moving_average"]["alignment"] == "역배열 (하락 추세)"
-    mixed = judge_indicators(make_judge_df(last={"ma5": 100.0, "ma20": 110.0, "ma60": 105.0}))
+    mixed = judge_indicators(
+        make_judge_df(last={"ma5": 100.0, "ma20": 110.0, "ma60": 105.0})
+    )
     assert mixed["moving_average"]["alignment"] == "혼조"
 
 
