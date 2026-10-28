@@ -23,3 +23,10 @@ class NotFoundError(AppError):
 
     status_code = 404
     code = "NOT_FOUND"
+
+
+class UnauthorizedError(AppError):
+    """인증 실패 (401). 예: internal API 키가 없거나 틀림."""
+
+    status_code = 401
+    code = "UNAUTHORIZED"
