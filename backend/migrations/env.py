@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.core.db import Base
+from app.forecast import models as forecast_models  # noqa: F401
 
 # 중요: 모델 파일을 임포트해야 Alembic이 그 안의 테이블을 인식한다.
 # 임포트하지 않은 models.py의 클래스는 Base에 등록되지 않아서 테이블이 생성되지 않는다.

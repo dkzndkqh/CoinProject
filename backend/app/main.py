@@ -5,12 +5,14 @@ from fastapi import FastAPI
 
 from app.core.error_handlers import register_exception_handlers
 from app.core.scheduler import scheduler
+from app.forecast.internal_router import router as internal_forecast_router
 from app.market.collector import (
     COLLECT_INTERVAL_MINUTES,
     collect_latest,
     collect_snapshots,
     recover_recent,
 )
+from app.market.internal_router import router as internal_market_router
 from app.market.router import router as market_router
 
 # 앱 전체 로그 설정. 이게 없으면 남기는 logger.info가 화면에 안 보인다.
@@ -42,4 +44,6 @@ app = FastAPI(
     description="BTC, ETH 분석 및 가격예측 AI 에이전트",
 )
 app.include_router(market_router)
+app.include_router(internal_forecast_router)
+app.include_router(internal_market_router)
 register_exception_handlers(app)  # 에러 -> 공통 JSON 응답 변환기를 앱에 등록

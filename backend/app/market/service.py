@@ -1,11 +1,12 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.clients import alternative, binance, upbit
+from app.core.exceptions import AppError
 from app.market import indicators
 from app.market.models import Candle, MarketSnapshot
 
@@ -17,6 +18,13 @@ logger = logging.getLogger(__name__)
 MINUTE_UNITS = {"1h": 60, "4h": 240}
 
 INDICATOR_TIMEFRAMES = ("4h", "1d")  # 지표 판정 봉
+
+# 봉 하나의 길이. "마감된 캔들인지" 판단할 때 쓴다. (캔들 시작 시각 + 길이 <= 지금 이면 마감)
+TIMEFRAME_DELTAS = {
+    "1h": timedelta(hours=1),
+    "4h": timedelta(hours=4),
+    "1d": timedelta(days=1),
+}
 
 # 우리 마켓 코드 -> 바이낸스 선물 심볼. 외부 API 형식은 service가 우리 용어로 번역한다.
 BINANCE_SYMBOLS = {"KRW-BTC": "BTCUSDT", "KRW-ETH": "ETHUSDT"}
@@ -111,6 +119,55 @@ def get_indicator_judgement(db: Session, market: str) -> dict | None:
             return None
         result[timeframe] = indicators.judge_indicators(indicators.add_indicators(df))
     return result
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """시간대 표시가 없는 시각은 UTC로 간주해서 꼬리표를 붙인다. None은 그대로 둔다.
+    DB의 시각은 시간대가 있는(timestamptz) 값이라, 없는 값과 비교하면 서버 설정에 따라 결과가 달라질 수 있다.
+    """
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def get_closed_candles(
+    db: Session,
+    market: str,
+    timeframe: str,
+    limit: int,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> list[Candle]:
+    """마감된 캔들만 오래된 순서로 돌려준다. ai_inference(Kronos 입력)가 쓴다.
+    규칙
+    - 진행 중인 캔들은 뺀다. 값이 15분마다 바뀌는 덜 만들어진 캔들이 Kronos 입력에 섞이면 안 된다.
+    - 시각 범위(start_time~end_time)로 먼저 거르고, 그 안에서 가장 최근 limit개를 고른다.
+    - DB에 있는 진짜 캔들만 준다 (결측을 채운 가짜 캔들은 만들지 않는다).
+    """
+    start_time = _ensure_utc(start_time)
+    end_time = _ensure_utc(end_time)
+
+    if start_time and end_time and start_time > end_time:
+        raise AppError("start_time은 end_time보다 앞이어야 합니다.")
+
+    # 마감 조건: candle_time + 봉 길이 <= 지금 -> candle_time <= 지금 - 봉 길이
+    latest_closed = datetime.now(UTC) - TIMEFRAME_DELTAS[timeframe]
+    # end_time이 있으면 둘 중 더 이른 시각이 상한이다.
+    upper = min(end_time, latest_closed) if end_time else latest_closed
+
+    # select(Candle).where(...): SELECT * FROM candles WHERE ... (여러 조건은 AND로 묶인다)
+    stmt = select(Candle).where(
+        Candle.market == market,
+        Candle.timeframe == timeframe,
+        Candle.candle_time <= upper,
+    )
+    if start_time:
+        stmt = stmt.where(Candle.candle_time >= start_time)
+
+    # 최신부터 limit개를 가져온 뒤(desc + limit), 응답은 오래된 순서가 되도록 바꾼다
+    stmt = stmt.order_by(Candle.candle_time.desc()).limit(limit)
+    rows = db.scalars(stmt).all()
+    return list(reversed(rows))
 
 
 def floor_time(dt: datetime, minutes: int) -> datetime:
