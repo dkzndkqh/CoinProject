@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.core.error_handlers import register_exception_handlers
 from app.core.scheduler import scheduler
+from app.forecast.internal_router import router as internal_forecast_router
 from app.market.collector import (
     COLLECT_INTERVAL_MINUTES,
     collect_latest,
@@ -43,5 +44,6 @@ app = FastAPI(
     description="BTC, ETH 분석 및 가격예측 AI 에이전트",
 )
 app.include_router(market_router)
+app.include_router(internal_forecast_router)
 app.include_router(internal_market_router)
 register_exception_handlers(app)  # 에러 -> 공통 JSON 응답 변환기를 앱에 등록
