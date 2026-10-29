@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf8", extra="ignore"
     )
 
-    # 백엔드 주소와 인증 키  
+    # 백엔드 주소와 인증 키
     backend_url: str
     internal_api_key: str
 
@@ -19,16 +19,30 @@ class Settings(BaseSettings):
     kronos_model: str = "NeoQuasar/Kronos-base"
     kronos_tokenizer: str = "NeoQuasar/Kronos-Tokenizer-base"
 
-    # 같은 입력으로 몇번 시뮬레이션 할지 
+    # 같은 입력으로 몇번 시뮬레이션 할지
     sample_count: int = 300
 
-# 예측 기간별 (입력 봉, 예측 칸 수). 4h는 1h봉 4칸, 1d는 4h봉 6칸, 7d는 1d봉 7칸을 예측한다.
-# 기간 목록은 코드에 하드코딩하지 말라는 방침이라, 나중에 30d를 넣을 때 여기만 고친다.
-# 설정이 아니라 모듈 상수로 둔 이유: 환경마다 달라지는 값이 아니라 설계 값이기 때문이다.
-HORIZONS = {
-    "4h": {"input_timeframe": "1h", "pred_len": 4},
-    "1d": {"input_timeframe": "4h", "pred_len": 6},
-    "7d": {"input_timeframe": "1d", "pred_len": 7},
+
+# 입력 종류별 설정. {입력 봉: {예측 칸 수, 저장할 기간}}
+# 입력 봉마다 '몇 칸을 예측할지'와 '그중 어떤 칸을 어떤 이름으로 저장할지'가 다르다.
+# 4h봉: 42칸 = 7일. 1번째 칸 = 4시간 뒤, 6번째 칸 = 24시간(1일) 뒤, 42번째 칸 = 7일 뒤.
+INPUTS = {
+    "4h": {
+        "pred_len": 42,
+        "save_steps": {
+            "4h": 1,
+            "8h": 2,
+            "12h": 3,
+            "1d": 6,
+            "2d": 12,
+            "3d": 18,
+            "4d": 24,
+            "5d": 30,
+            "6d": 36,
+            "7d": 42,
+        },
+    },
+    # 1d봉 입력은 3번 단계에서 여기에 추가한다. (7칸, 1d~7d)
 }
 
 MARKETS = ["KRW-BTC", "KRW-ETH"]
