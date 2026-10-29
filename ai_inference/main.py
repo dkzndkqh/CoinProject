@@ -8,6 +8,7 @@ from forecaster import STEP, load_predictor, make_forecasts
 # logging은 자바의 SLF4J/Logger와 같다. print보다 시각과 수준(INFO, ERROR)이 같이 찍혀서
 # 오래 도는 프로그램의 기록을 나중에 읽기 좋다.
 log = logging.getLogger("ai_inference")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 CHECK_INTERVAL_SEC = 15 * 60  # 새 봉이 생겼는지 확인하는 주기 (15분)
 
