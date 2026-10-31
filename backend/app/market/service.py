@@ -29,6 +29,13 @@ TIMEFRAME_DELTAS = {
 # 우리 마켓 코드 -> 바이낸스 선물 심볼. 외부 API 형식은 service가 우리 용어로 번역한다.
 BINANCE_SYMBOLS = {"KRW-BTC": "BTCUSDT", "KRW-ETH": "ETHUSDT"}
 
+# 최근 수익률을 구할 기간. 에이전트가 "최근 흐름"을 알 수 있게 한다.
+RETURN_PERIODS = {
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
+
 
 def fetch_candles(
     market: str, timeframe: str, count: int, to: datetime | None = None
@@ -254,3 +261,33 @@ def save_snapshots(db: Session, rows: list[dict]) -> int:
     db.execute(stmt)
     db.commit()
     return len(rows)
+
+
+def get_recent_returns(db: Session, market: str, current_price: float) -> dict:
+    """현재가가 24시간·7일·30일 전보다 몇 % 올랐는지(+) 내렸는지(-)를 계산한다.
+    예: {"24h": -0.2, "7d": -3.58, "30d": -8.72}. 계산할 수 없는 기간은 None.
+    """
+    now = datetime.now(UTC)
+    result = {}
+    for label, delta in RETURN_PERIODS.items():
+        target = now - delta
+        # 그 시각 이전에 이미 마감된 가장 최근 1시간봉. (캔들 시작 + 1시간 <= target 이어야 마감된 것)
+        candle = db.scalars(
+            select(Candle)
+            .where(
+                Candle.market == market,
+                Candle.timeframe == "1h",
+                Candle.candle_time <= target - timedelta(hours=1),
+            )
+            .order_by(Candle.candle_time.desc())
+            .limit(1)
+        ).first()
+        # 캔들이 없거나, 찾은 캔들이 target보다 3시간 넘게 이전이면(데이터 부재) 계산하지 않는다.
+        # 오래된 값으로 계산하면 "24시간 변화"가 아닌 숫자가 나가기 때문이다.
+        if candle is None or candle.candle_time < target - timedelta(hours=3):
+            result[label] = None
+        else:
+            result[label] = round(
+                (current_price - candle.close) / candle.close * 100, 2
+            )
+    return result
