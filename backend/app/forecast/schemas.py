@@ -55,3 +55,11 @@ class ForecastSaveResponse(BaseModel):
     """저장 결과. saved=True면 새로 저장했고, False면 같은 예측이 이미 있어서 무시했다."""
 
     saved: bool
+
+
+class LatestBaseTimeResponse(BaseModel):
+    """마지막 기준 시각 조회 결과.
+    base_time이 None이면 해당 코인·이름표의 예측이 아직 한 건도 없다는 뜻이다 (처음 실행).
+    """
+
+    base_time: AwareDatetime | None

@@ -177,6 +177,32 @@ def test_저장된_값과_수집_시각이_채워진다(db):
     assert saved.fetched_at is not None  # DB가 now()로 채움
 
 
+# ---------- service: get_latest_base_time (실제 DB) ----------
+
+
+def test_예측이_없으면_None(db):
+    assert service.get_latest_base_time(db, "KRW-BTC", TEST_MODEL) is None
+
+
+def test_가장_최근_기준_시각을_돌려준다(db):
+    later = datetime(2000, 1, 1, 13, tzinfo=UTC)
+    service.save_forecast(db, make())
+    service.save_forecast(db, make(base_time=later))
+    # 기간이 달라도 같은 이름표면 한 묶음이다 (기준 시각의 최댓값만 본다).
+    service.save_forecast(db, make(horizon="1d"))
+
+    assert service.get_latest_base_time(db, "KRW-BTC", TEST_MODEL) == later
+
+
+def test_이름표나_코인이_다르면_찾지_않는다(db):
+    service.save_forecast(db, make())
+
+    # 같은 코인이라도 다른 이름표(예: 다른 입력 종류)의 예측은 섞이지 않는다.
+    assert service.get_latest_base_time(db, "KRW-BTC", f"{TEST_MODEL}-other") is None
+    # 이름표가 같아도 다른 코인이면 찾지 않는다.
+    assert service.get_latest_base_time(db, "KRW-ETH", TEST_MODEL) is None
+
+
 # ---------- router: POST /api/internal/forecasts (service는 가짜) ----------
 
 
@@ -275,5 +301,75 @@ def test_필수_필드가_빠지면_422(client):
     body = {k: v for k, v in BODY.items() if k != "horizon"}
 
     response = client.post("/api/internal/forecasts", json=body, headers=HEADERS)
+
+    assert response.status_code == 422
+
+
+# ---------- router: GET /api/internal/forecasts/latest-base-time (service는 가짜) ----------
+
+LATEST_URL = "/api/internal/forecasts/latest-base-time"
+LATEST_PARAMS = {"market": "KRW-BTC", "model_name": TEST_MODEL}
+
+
+def test_마지막_기준_시각_키가_없으면_401(client):
+    response = client.get(LATEST_URL, params=LATEST_PARAMS)
+
+    assert response.status_code == 401
+
+
+def test_예측이_있으면_기준_시각을_돌려준다(client, monkeypatch):
+    base = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    monkeypatch.setattr(service, "get_latest_base_time", lambda db, m, n: base)
+
+    response = client.get(LATEST_URL, params=LATEST_PARAMS, headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"base_time": "2026-01-01T12:00:00Z"}
+
+
+def test_예측이_없으면_200이고_base_time은_null(client, monkeypatch):
+    monkeypatch.setattr(service, "get_latest_base_time", lambda db, m, n: None)
+
+    response = client.get(LATEST_URL, params=LATEST_PARAMS, headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"base_time": None}
+
+
+def test_쿼리_파라미터가_service에_전달된다(client, monkeypatch):
+    received = {}
+
+    def fake(db, market, model_name):
+        received["args"] = (market, model_name)
+
+    monkeypatch.setattr(service, "get_latest_base_time", fake)
+
+    client.get(LATEST_URL, params=LATEST_PARAMS, headers=HEADERS)
+
+    assert received["args"] == ("KRW-BTC", TEST_MODEL)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"market": "KRW-DOGE"},
+        {"model_name": ""},
+        {"model_name": "x" * 51},
+    ],
+)
+def test_잘못된_파라미터는_422이고_service는_호출되지_않는다(client, monkeypatch, bad):
+    def must_not_call(db, market, model_name):
+        raise AssertionError("검증에 실패했는데 service가 호출됨")
+
+    monkeypatch.setattr(service, "get_latest_base_time", must_not_call)
+
+    response = client.get(LATEST_URL, params={**LATEST_PARAMS, **bad}, headers=HEADERS)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_필수_파라미터가_빠지면_422(client):
+    response = client.get(LATEST_URL, params={"market": "KRW-BTC"}, headers=HEADERS)
 
     assert response.status_code == 422
