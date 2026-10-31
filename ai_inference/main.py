@@ -1,9 +1,9 @@
 import logging
 import time
 
-from backend_client import get_candles, post_forecast
+from backend_client import get_candles, get_latest_base_time, post_forecast
 from config import INPUTS, MARKETS
-from forecaster import STEP, load_predictor, make_forecasts
+from forecaster import STEP, load_predictor, make_forecasts, model_label
 
 # logging은 자바의 SLF4J/Logger와 같다. print보다 시각과 수준(INFO, ERROR)이 같이 찍혀서
 # 오래 도는 프로그램의 기록을 나중에 읽기 좋다.
@@ -30,7 +30,7 @@ def process(predictor, market: str, timeframe: str) -> None:
         return
 
     # ② 새 봉이다. 입력용 캔들 512개를 받아서 계산한다 (코인당 약 3분).
-    log.info("새 봉 감지: %s %s 기준 %s, 계산 시작", market, timeframe, base_time)
+    log.info("새 봉 감지: %s %s 기준 %s, 예측 모델 시작", market, timeframe, base_time)
     candles = get_candles(market, timeframe)
     forecasts = make_forecasts(predictor, market, timeframe, candles)
 
@@ -60,6 +60,31 @@ def run_once(predictor) -> None:
                 log.exception("실패: %s %s (다음 확인 때 다시 시도)", market, timeframe)
 
 
+def restore_last_done() -> None:
+    """서버가 켜질 때 한 번, 백엔드에 '어디까지 저장했어?'를 물어서 last_done을 채운다.
+    이걸 안 하면 껐다 켤 때마다 이미 끝낸 모델 예측을 다시 돌린다 (코인당 약 3분 GPU).
+    """
+    for market in MARKETS:
+        for timeframe in INPUTS:
+            try:
+                # 예측을 올릴 때와 같은 이름표로 물어야 한다. 그래서 model_label을 같이 쓴다.
+                base_time = get_latest_base_time(market, model_label(timeframe))
+            except Exception:
+                # 서버가 꺼져 있어도 프로그램은 시작한다. 이 경우 기억이 비어 있어서
+                # 한 번 다시 예측하는 것뿐이고, 저장은 중복이면 무시되므로 데이터는 안전하다.
+                log.exception(
+                    "최신 기록 되살리기 실패: %s %s (비어 있는 채로 시작)",
+                    market,
+                    timeframe,
+                )
+                continue
+            if base_time is not None:
+                last_done[(market, timeframe)] = base_time
+                log.info(
+                    "복구 성공: %s %s 마지막 기준 %s", market, timeframe, base_time
+                )
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -71,6 +96,7 @@ def main() -> None:
         list(INPUTS),
         CHECK_INTERVAL_SEC // 60,
     )
+    restore_last_done()
     while True:  # 끝나지 않는 반복. Ctrl+C로 멈춘다.
         run_once(predictor)
         time.sleep(CHECK_INTERVAL_SEC)  # 15분 쉰다
