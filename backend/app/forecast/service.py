@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -30,3 +33,21 @@ def save_forecast(db: Session, data: ForecastCreate) -> bool:
     db.commit()
     saved = result.first() is not None  # 행이 왔으면 새로 저장한 것, None이면 건너뜀
     return saved
+
+
+def get_latest_base_time(db: Session, market: str, model_name: str) -> datetime | None:
+    """해당 코인·이름표로 저장된 예측 중 가장 최근 기준 시각을 돌려준다.
+    아직 한 건도 없으면 None.
+
+    ai_inference가 시작할 때 "어디까지 계산했는지"를 복원하려고 쓴다.
+    """
+
+    # select(func.max(...)): SELECT MAX(base_time) FROM kronos_forecasts WHERE ...
+    # 조건에 맞는 행이 하나도 없어도 집계 함수는 에러 없이 NULL(None) 한 행을 돌려준다.
+    # 그래서 "없음"을 따로 분기하지 않아도 그대로 None이 반환된다.
+    stmt = select(func.max(KronosForecast.base_time)).where(
+        KronosForecast.market == market,
+        KronosForecast.model_name == model_name,
+    )
+    # scalar(): 결과의 첫 행 첫 칸의 값 하나만 꺼낸다 (자바 JDBC의 rs.getObject(1)에 가깝다).
+    return db.scalar(stmt)
