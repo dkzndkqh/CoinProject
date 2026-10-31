@@ -149,6 +149,21 @@ def test_기간이_다르면_새_행이다(db):
     assert count_test_rows(db) == 2
 
 
+def test_모델_이름이_다르면_새_행이다(db):
+    # 4h 입력과 1d 입력이 같은 시각에 같은 기간을 예측하는 상황.
+    # 기본 키에 model_name이 들어갔으므로 둘 다 저장되어야 한다.
+    service.save_forecast(db, make())
+
+    # _clean은 TEST_MODEL 행만 지우므로, 다른 이름표 행은 finally에서 직접 지운다.
+    other = f"{TEST_MODEL}-other"
+    try:
+        assert service.save_forecast(db, make(model_name=other))
+        assert count_test_rows(db) == 1  # TEST_MODEL 행은 그대로 1개
+    finally:
+        db.execute(delete(KronosForecast).where(KronosForecast.model_name == other))
+        db.commit()
+
+
 def test_저장된_값과_수집_시각이_채워진다(db):
     service.save_forecast(db, make())
 
