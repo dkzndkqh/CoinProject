@@ -54,3 +54,22 @@ def post_forecast(forecast: dict) -> bool:
     # 4xx, 5xx면 예외를 던진다. 422는 백엔드 입력 검사에서 막힌 것 (숫자 범위, 순서 등)
     resp.raise_for_status()
     return resp.json()["saved"]
+
+
+def get_latest_base_time(market: str, model_name: str):
+    """백엔드에 '이 코인, 이 이름표로 어디까지 예측해서 저장했어?'를 묻는다.
+    돌려주는 값: 마지막으로 저장된 기준 시각(UTC 시각 타입). 한 번도 저장한 적이 없으면 None.
+    서버가 켜질 때 '어디까지 했는지' 기억을 되살리는 데 쓴다.
+    """
+    resp = httpx.get(
+        f"{settings.backend_url}/api/internal/forecasts/latest-base-time",
+        params={"market": market, "model_name": model_name},
+        headers={"X-API-Key": settings.internal_api_key},
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+    value = resp.json()["base_time"]
+    # 응답이 null이면 None, 아니면 시간대가 있는 시각으로 바꾼다.
+    # 다른 곳(main.py)의 기준 시각과 == 로 비교하므로 같은 타입(UTC 시각)이어야 한다.
+    return None if value is None else pd.to_datetime(value, utc=True)

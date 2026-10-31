@@ -96,6 +96,18 @@ def summarize(closes: np.ndarray, base_price: float) -> dict:
     }
 
 
+def model_label(timeframe: str) -> str:
+    """예측 결과에 붙이는 이름표를 만든다. 예: NeoQuasar/Kronos-base|n300|4h42
+    모델, 샘플 수, 입력 봉이 하나라도 다르면 다른 이름이 된다.
+    DB에서 '같은 조건으로 낸 예측'을 구분하는 키로 쓰이므로,
+    예측을 올릴 때와 마지막 기준 시각을 물어볼 때 반드시 이 함수 하나만 쓴다.
+    """
+    cfg = INPUTS[timeframe]
+    return (
+        f"{settings.kronos_model}|n{settings.sample_count}|{timeframe}{cfg['pred_len']}"
+    )
+
+
 def make_forecasts(
     predictor: KronosPredictor, market: str, timeframe: str, candles: pd.DataFrame
 ) -> list[dict]:
@@ -127,7 +139,7 @@ def make_forecasts(
                 "base_time": base_time.isoformat(),
                 "base_price": base_price,
                 **summarize(closes, base_price),
-                "model_name": f"{settings.kronos_model}|n{settings.sample_count}|{timeframe}{cfg['pred_len']}",
+                "model_name": model_label(timeframe),
             }
         )
     return results
