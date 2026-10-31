@@ -15,9 +15,10 @@ class KronosForecast(Base):
 
     __tablename__ = "kronos_forecasts"
 
-    # --- 기본 키: market + horizon + base_time 복합 키 ---
-    # 같은 코인, 같은 예측 기간, 같은 기준 시각의 예측은 한 행만 존재한다.
-    # 같은 예측을 다시 올리면 새 행이 생기지 않고 덮어쓴다 (upsert의 기준).
+    # --- 기본 키: market + horizon + base_time + model_name 복합 키 ---
+    # 같은 코인, 같은 예측 기간, 같은 기준 시각, 같은 모델(입력 이름표)의 예측은 한 행만 존재한다.
+    # model_name이 키에 들어간 이유: 4h 입력과 1d 입력이 같은 시각에 같은 기간(예: 1d)을
+    # 각각 예측하기 때문이다. model_name이 없으면 둘 중 하나가 중복으로 버려진다.
 
     # market: "KRW-BTC", "KRW-ETH" (candles와 같은 형식)
     market: Mapped[str] = mapped_column(String(20), primary_key=True)
@@ -53,8 +54,8 @@ class KronosForecast(Base):
     up_probability: Mapped[float] = mapped_column(Float)
 
     # --- 메타정보 ---
-    # 어느 모델이 낸 예측인지 값 (예: "Kronos-base or 다른모델 일수도")
-    model_name: Mapped[str] = mapped_column(String(50))
+    # 어느 모델이 낸 예측인지 값 (예:NeoQuasar/Kronos-base|n300|4h42)
+    model_name: Mapped[str] = mapped_column(String(50), primary_key=True)
 
     # 이 행을 저장한 시각. "업데이트 지연 " 표시를 위함
     # server_default=func.now() : 값을 안넣으면 DB가 현재 시각을 자동으로 채움
