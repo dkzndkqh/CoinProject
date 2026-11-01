@@ -15,3 +15,6 @@ __pycache__/
 
 # Claude 작업 지침 (개인 메모와 체크리스트가 들어 있어 공개하지 않음)
 CLAUDE.md
+
+# 그래피파이 관련 파일
+graphify-out/
