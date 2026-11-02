@@ -236,6 +236,7 @@ def analyze(db: Session, market: str, question: str) -> dict:
         "message": result.message,
         "price": data["price"],
         "price_time_kst": data["latest_candle_start_kst"],
+        "scenario": build_scenario(data, result.horizon),
         "disclaimer": DISCLAIMER,
     }
 
