@@ -30,3 +30,10 @@ class UnauthorizedError(AppError):
 
     status_code = 401
     code = "UNAUTHORIZED"
+
+
+class AnalysisUnavailableError(AppError):
+    """분석을 만들지 못했을 때 (503). 예: Claude 호출 실패, 양식을 지키지 못한 응답이 반복됨."""
+
+    status_code = 503
+    code = "ANALYSIS_UNAVAILABLE"
