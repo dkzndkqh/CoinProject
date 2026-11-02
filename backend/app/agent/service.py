@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
 # 에이전트에게 줄 예측 입력 종류
+
 FORECAST_INPUTS = ("4h", "1d")
+# 시나리오에 쓸 예측 입력을 고르는 기준(시간). 이 시간(2일=48시간) 이상이면 일봉 입력 예측을,
+# 그보다 짧으면 4h 입력 예측을 쓴다. 먼 기간은 4h 입력 예측이 가장 불안정했기 때문이다.
+DAILY_INPUT_FROM_HOURS = 48
 
 # 시스템 프롬프트 파일. 이 파일(service.py)이 있는 폴더 기준 prompts/system.md
 # Path(__file__): 지금 파일의 경로, .parent: 그 폴더. 자바의 Paths.get(...).getParent()와 같다.
@@ -232,5 +236,68 @@ def analyze(db: Session, market: str, question: str) -> dict:
         "message": result.message,
         "price": data["price"],
         "price_time_kst": data["latest_candle_start_kst"],
+        "scenario": build_scenario(data, result.horizon),
         "disclaimer": DISCLAIMER,
+    }
+
+
+def _pick_forecast(data: dict, horizon: str) -> tuple[str, dict] | None:
+    """질문 기간에 맞는 예측 입력을 고른다. (입력 이름, 그 입력의 예측)을 돌려주고, 쓸 게 없으면 None.
+    기본: 짧은 기간(2일 미만)은 "4h" 입력, 긴 기간은 "1d" 입력.
+    기본 입력에 그 기간의 예측이 없으면(예측이 아직 없거나 기간이 빠짐) 다른 입력으로 대신한다.
+    `tuple[str, dict] | None`: (문자열, dict) 쌍 또는 None. 자바의 Optional<Pair<String, Map>>과 비슷하다.
+    """
+    # total_seconds()/3600: 시간 길이를 시간 단위 숫자로 변환 2일 -> 48
+    hours = _horizon_delta(horizon).total_seconds() / 3600
+    preferred = "4h" if hours < DAILY_INPUT_FROM_HOURS else "1d"
+    other = "1d" if preferred == "4h" else "4h"
+
+    for tag in (preferred, other):  # 기본 입력을 먼저, 없으면 다른 입력
+        forecast = data["forecasts"].get(tag)  # dict.get(키)
+        if forecast is not None and horizon in forecast["horizons"]:
+            return tag, forecast
+    return None
+
+
+def build_scenario(data: dict, horizon: str) -> dict | None:
+    """질문 기간까지의 예측을 '시나리오' 한 덩어리로 만든다. 화면의 예상 범위 카드와 차트 예측 띠가 쓴다.
+    새로 계산하는 값은 없다. build_agent_input이 이미 만든 값을 모아서 담기만 한다 (숫자는 코드가 채운다).
+    돌려주는 값: {"horizon", "input", "base_time_kst", "hours_ago", "points": [...]} 쓸 예측이 없으면 None.
+    points는 짧은 기간부터 시간순이고, 마지막 점이 질문한 기간이다 (카드의 하단·중앙·상단).
+    """
+    picked = _pick_forecast(data, horizon)
+    if picked is None:
+        return None
+    tag, forecast = picked
+
+    limit = _horizon_delta(horizon)
+    # 질문 기간 이하인 기간 이름만 골라 시간순으로 정렬한다.
+    # sorted(목록, key=함수): key가 돌려주는 값 기준 정렬 (자바 Comparator.comparing).
+    names = sorted(
+        (name for name in forecast["horizons"] if _horizon_delta(name) <= limit),
+        key=_horizon_delta,
+    )
+
+    points = []
+    for name in names:
+        h = forecast["horizons"][name]
+        points.append(
+            {
+                "horizon": name,
+                "target_time_kst": h["target_time_kst"],
+                "median": h["median"],
+                "low_80": h["range_80"][0],
+                "high_80": h["range_80"][1],
+                "median_vs_price_pct": h["median_vs_price_pct"],
+                "low_80_vs_price_pct": h["range_80_vs_price_pct"][0],
+                "high_80_vs_price_pct": h["range_80_vs_price_pct"][1],
+            }
+        )
+
+    return {
+        "horizon": horizon,
+        "input": tag,  # 어느 입력 예측을 썼는지 (화면에 "4시간봉 기반"/"일봉 기반"으로 표시할 수 있다)
+        "base_time_kst": forecast["base_time_kst"],
+        "hours_ago": forecast["hours_ago"],
+        "points": points,
     }
