@@ -106,6 +106,8 @@ class Scenario(BaseModel):
 class AnalyzeResponse(BaseModel):
     """POST /api/agent/analyze 의 응답. analyze()가 돌려주는 dict와 같은 칸이다."""
 
+    # 응답 종류. 프론트가 이 값으로 분석 카드를 그릴지 안내문을 보여줄지 정한다.
+    kind: Literal["analysis"] = "analysis"
     market: str
     stance: Literal["매수", "매도", "관망"]
     horizon: str
@@ -114,6 +116,15 @@ class AnalyzeResponse(BaseModel):
     price_time_kst: str
     scenario: Scenario | None  # 쓸 예측이 없으면 None
     disclaimer: str
+
+
+class RejectResponse(BaseModel):
+    """분류 단계가 reject로 판단했을 때의 응답. 분석은 하지 않고 고정 안내문만 돌려준다.
+    자바로 치면 같은 API가 성공 응답의 두 종류(sealed interface의 구현 두 개) 중 하나를 돌려주는 것과 같다.
+    """
+
+    kind: Literal["reject"] = "reject"
+    message: str  # 코드의 고정 안내문 (Claude가 쓴 글이 아니다)
 
 
 class QuestionPlan(BaseModel):
