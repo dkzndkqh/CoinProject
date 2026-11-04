@@ -36,6 +36,16 @@ class AnalysisResult(BaseModel):
     )
 
 
+class ChatTurn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # user: 사용자가 한 말, assistant: 에이전트가 한 답
+    role: Literal["user", "assistant"]
+
+    # 항목당 3000자 상한. 분석 글(message 상한 3000자)이 그대로 들어와도 맞는다.
+    content: Annotated[str, Field(min_length=1, max_length=3000)]
+
+
 class AnalyzeRequest(BaseModel):
     """POST /api/agent/analyze 의 요청 본문. 자바의 @RequestBody DTO + Bean Validation과 같다.
     규칙에 어긋나면 FastAPI가 서비스에 오기 전에 422로 막는다.
@@ -46,10 +56,21 @@ class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     # 이 두 값만 허용
-    market: Literal["KRW-BTC", "KRW-ETH"]
+    market: Literal["KRW-BTC", "KRW-ETH"] | None = None
 
     # 길이 상한 500자: 질문이 너무 길면 토큰 비용이 늘고 프롬프트 주입 시도도 쉬워진다.
     question: Annotated[str, Field(min_length=1, max_length=500)]
+
+    # 최근 대화. 프론트가 매 요청에 실어 보낸다. 서버는 저장하지 않는다.
+    # max_length=6: 최근 6개까지만 받는다 (리스트에서는 항목 개수 상한이다).
+    # default_factory=list: 안 보내면 빈 리스트. 기본값을 []로 직접 쓰면 객체끼리 공유될 수 있어서
+    # 자바의 new ArrayList<>()처럼 매번 새로 만들도록 factory를 쓴다.
+    history: list[ChatTurn] = Field(default_factory=list, max_length=6)
+
+    # 기간 지정. 평소엔 비워 두고, 프론트가 복수 요청을 쪼개 보낼 때만 채운다.
+    horizon: Annotated[str, Field(pattern=r"^[0-9]+(h|d)$", max_length=10)] | None = (
+        None
+    )
 
 
 class ScenarioPoint(BaseModel):
