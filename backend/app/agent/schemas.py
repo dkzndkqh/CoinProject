@@ -132,7 +132,8 @@ class QuestionPlan(BaseModel):
     # 이력, 차트 힌트, BTC 같은 기본값 채우기는 Claude가 아니라 코드가 한다.
     # `X | None = None`: 값이 없을 수 있는 칸. 자바의 @Nullable 필드와 같고, 기본값 None이라 안 적어도 된다.
     market: Literal["KRW-BTC", "KRW-ETH"] | None = Field(
-        default=None, description="질문 문장에 코인이 직접 적혀 있을때만 채움"
+        default=None,
+        description="질문 문장에 코인이 직접 적혀 있을때만 채움. 없으면 대화 이력에서 가장 최근에 다룬 코인. 둘 다 없으면 null",
     )
 
     # horizon: 문장에 기간이 적혀 있을때만 채움
