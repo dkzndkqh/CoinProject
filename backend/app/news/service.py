@@ -1,5 +1,6 @@
 import re
 
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -48,3 +49,45 @@ def save_articles(db: Session, source: str, articles: list[dict]) -> int:
     saved = db.execute(stmt).all()
     db.commit()
     return len(saved)
+
+
+def get_unscored(db: Session, limit: int) -> list[dict]:
+    """감성 점수가 아직 없는 기사를 최신순으로 limit개 돌려준다.
+    최신 기사가 시장 분위기에 더 중요해서 최신순으로 준다.
+    `.is_(None)`은 SQL의 IS NULL이다. 파이썬의 `== None`은 쓰지 않는다
+    (SQLAlchemy가 연산자를 가로채 SQL로 바꾸는 방식이라 is_를 쓰는 게 정석이다).
+    """
+    stmt = (
+        select(NewsArticle.id, NewsArticle.title, NewsArticle.summary)
+        .where(NewsArticle.sentiment_score.is_(None))
+        .order_by(NewsArticle.published_at.desc())
+        .limit(limit)
+    )
+    return [
+        {"id": r.id, "title": r.title, "summary": r.summary}
+        for r in db.execute(stmt).all()
+    ]
+
+
+def save_sentiments(db: Session, items: list) -> int:
+    """기사별 감성 결과를 저장하고, 실제로 저장된 건수를 돌려준다.
+    이미 점수가 있는 기사는 건너뛴다 (WHERE sentiment_score IS NULL).
+    같은 요청을 두 번 보내거나 두 곳에서 동시에 계산해도 먼저 저장된 값이 유지된다.
+    ponytail: 건별 UPDATE. 한 번에 최대 200건이라 충분하다. 더 늘어나면 한 번에 묶는 UPDATE로 바꾼다.
+    """
+    updated = 0
+    for item in items:
+        stmt = (
+            update(NewsArticle)
+            .where(NewsArticle.id == item.id, NewsArticle.sentiment_score.is_(None))
+            .values(
+                sentiment_label=item.label,
+                sentiment_score=item.score,
+                model_name=item.model_name,
+            )
+            .returning(NewsArticle.id)  # 실제로 바뀐 행만 돌려받아 센다
+        )
+        if db.execute(stmt).first() is not None:
+            updated += 1
+    db.commit()
+    return updated

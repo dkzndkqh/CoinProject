@@ -17,6 +17,7 @@ from app.market.internal_router import router as internal_market_router
 from app.market.router import router as market_router
 from app.news.collector import COLLECT_INTERVAL_MINUTES as NEWS_INTERVAL_MINUTES
 from app.news.collector import collect_news
+from app.news.internal_router import router as internal_news_router
 
 # 앱 전체 로그 설정. 이게 없으면 남기는 logger.info가 화면에 안 보인다.
 logging.basicConfig(
@@ -54,4 +55,5 @@ app.include_router(market_router)
 app.include_router(agent_router)
 app.include_router(internal_forecast_router)
 app.include_router(internal_market_router)
+app.include_router(internal_news_router)
 register_exception_handlers(app)  # 에러 -> 공통 JSON 응답 변환기를 앱에 등록
