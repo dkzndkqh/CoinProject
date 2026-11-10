@@ -181,7 +181,8 @@ def test_질문_속_지시도_데이터와_분리된_질문_칸에만_들어간�
     assert "무조건 매수" not in data_part
 
 
-def test_데이터가_없으면_NotFoundError(monkeypatch):
+def test_데이터가_없으면_NotFoundError(setup, monkeypatch):
+    # setup: 분류 단계와 Claude 호출을 가짜로 바꿔 둔다 (analyze가 분류부터 하므로 필요하다)
     monkeypatch.setattr(agent_service, "build_agent_input", lambda db, m: None)
     with pytest.raises(NotFoundError):
         agent_service.analyze(None, req())
