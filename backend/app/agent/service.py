@@ -6,7 +6,8 @@ from pathlib import Path
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.agent.schemas import AnalysisResult
+from app.agent import planner
+from app.agent.schemas import AnalysisResult, AnalyzeRequest
 from app.clients import llm
 from app.core.exceptions import AnalysisUnavailableError, NotFoundError
 from app.forecast import service as forecast_service
@@ -44,6 +45,16 @@ DISCLAIMER = "이 내용은 데이터 기반 참고 분석이며 투자 권유�
 
 # 분석을 못 했을 때 사용자에게 보여줄 말
 UNAVAILABLE_MESSAGE = "지금은 분석을 만들 수 없습니다. 잠시 후 다시 시도해 주세요."
+
+# 분류 단계가 reject로 판단했을 때 안내문
+REJECT_MESSAGE = (
+    "비트코인 및 이더리움 관련 질문에만 답할 수 있습니다."
+    " 예: 비트코인 3일뒤 가격 어떨거 같아?"
+)
+
+# 코인, 기간을 사용자가 지정하지 않았을 때 기본 값
+DEFAULT_MARKET = "KRW-BTC"
+DEFAULT_HORIZON = "1d"
 
 
 def _kst_text(dt: datetime) -> str:
@@ -137,12 +148,14 @@ def _load_system_prompt() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def _build_user_message(question: str, data: dict) -> str:
+def _build_user_message(question: str, horizon: str, data: dict) -> str:
     """Claude에게 보낼 사용자 메시지. 질문과 데이터를 태그로 나눠서, 질문 속 지시가 데이터와 섞이지 않게 한다.
     ensure_ascii=False: 한글을 \\uXXXX로 바꾸지 않고 그대로 둔다 (읽기 쉽고 토큰도 적다).
+    horizon: 코드가 정한 기간. 분석 Claude는 이 기간을 기준으로 답한다.
     """
     return (
         f"<question>\n{question}\n</question>\n\n"
+        f"<horizon>\n{horizon}\n</horizon>\n\n"
         f"<data>\n{json.dumps(data, ensure_ascii=False)}\n</data>"
     )
 
@@ -188,18 +201,35 @@ def _parse_result(raw: dict, available: set[str]) -> AnalysisResult | None:
     return result
 
 
-def analyze(db: Session, market: str, question: str) -> dict:
+def analyze(db: Session, body: AnalyzeRequest) -> dict:
     """질문에 대한 분석을 만들어 돌려준다.
     흐름: 데이터 조립 -> Claude 호출(양식 강제) -> 응답 검사 -> (깨졌으면 1번 재요청) -> 결과.
     market: "KRW-BTC" 또는 "KRW-ETH" (어느 코인인지는 호출하는 쪽이 정해서 넘긴다).
     에러: 데이터가 없으면 NotFoundError(404), 분석을 못 만들면 AnalysisUnavailableError(503).
     """
+
+    # 1) 분류. 요청에 horizon이 있어도 항상 거친다 (horizon만 붙여 거절 판단을 우회하는 걸 막기 위해).
+    # plan_question은 실패해도 예외를 내지 않고 기본값(analyze)을 준다.
+    plan = planner.plan_question(body.question, body.history)
+
+    # 2) 거절이면 큰 호출 없이 여기서 끝낸다.
+    if plan.action == "reject":
+        return {"kind": "reject", "message": REJECT_MESSAGE}
+
+    # 3) 코인·기간 결정. `A or B or C`는 앞에서부터 처음으로 "값이 있는(None이 아닌)" 것을 쓴다.
+    #    자바의 Optional.ofNullable(a).or(() -> ...)를 연달아 쓴 것과 같다.
+    #    코인: 분류(문장, 없으면 이력) > 차트 힌트 > BTC
+    #    기간: 요청 horizon > 분류 > 1d
+    market = plan.market or body.market or DEFAULT_MARKET
+    horizon = body.horizon or plan.horizon or DEFAULT_HORIZON
+    question = body.question
+
     data = build_agent_input(db, market)
     if data is None:
         raise NotFoundError("분석에 필요한 시장 데이터가 아직 준비되지 않았습니다")
 
     system = _load_system_prompt()
-    user = _build_user_message(question, data)
+    user = _build_user_message(question, horizon, data)
     available = _available_horizons(data)
 
     result = None
@@ -230,6 +260,7 @@ def analyze(db: Session, market: str, question: str) -> dict:
         raise AnalysisUnavailableError(UNAVAILABLE_MESSAGE)
 
     return {
+        "kind": "analysis",
         "market": market,
         "stance": result.stance,
         "horizon": result.horizon,

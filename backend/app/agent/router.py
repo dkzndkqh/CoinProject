@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.agent import service
-from app.agent.schemas import AnalyzeRequest, AnalyzeResponse
+from app.agent.schemas import AnalyzeRequest, AnalyzeResponse, RejectResponse
 from app.core.db import get_db
 
 # 스프링 컨트롤러의 @RequestMapping("/api/agent")와 같다. main.py에서 앱에 붙인다.
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 # responses: Swagger에 에러 응답을 설명하는 용도다 (동작에는 영향 없음).
 @router.post(
     "/analyze",
-    response_model=AnalyzeResponse,
+    response_model=AnalyzeResponse | RejectResponse,
     summary="질문에 대한 코인 분석 (매수,매도,관망 + 예상범위)",
     responses={
         404: {"description": "분석에 필요한 시장 데이터가 아직 없음"},
@@ -33,4 +33,4 @@ def analyze(
     여기서는 연결만 한다. 데이터 조립, Claude 호출, 검사는 모두 service.analyze()가 한다.
     에러(404, 503)는 서비스가 AppError를 던지면 전역 핸들러가 {"error": {...}} 모양으로 바꿔 준다.
     """
-    return service.analyze(db, body.market, body.question)
+    return service.analyze(db, body)
