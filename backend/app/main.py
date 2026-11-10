@@ -15,6 +15,8 @@ from app.market.collector import (
 )
 from app.market.internal_router import router as internal_market_router
 from app.market.router import router as market_router
+from app.news.collector import COLLECT_INTERVAL_MINUTES as NEWS_INTERVAL_MINUTES
+from app.news.collector import collect_news
 
 # 앱 전체 로그 설정. 이게 없으면 남기는 logger.info가 화면에 안 보인다.
 logging.basicConfig(
@@ -34,6 +36,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         collect_snapshots, "interval", minutes=COLLECT_INTERVAL_MINUTES
     )  # 시장 지표 스냅샷도 15분마다
+    scheduler.add_job(
+        collect_news, "interval", minutes=NEWS_INTERVAL_MINUTES
+    )  # 뉴스도 15분마다
+    scheduler.start()
     scheduler.start()
     yield  # 여기서부터 서버가 요청을 받는다.
     scheduler.shutdown()  # 종료할 때 스케줄러도 멈춘다.

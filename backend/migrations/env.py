@@ -12,6 +12,7 @@ from app.forecast import models as forecast_models  # noqa: F401
 # 임포트하지 않은 models.py의 클래스는 Base에 등록되지 않아서 테이블이 생성되지 않는다.
 # 새 도메인의 models.py를 만들 때마다 여기에 한 줄씩 추가해야 한다.
 from app.market import models  # noqa: F401
+from app.news import models as news_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
