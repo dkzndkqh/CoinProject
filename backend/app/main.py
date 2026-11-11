@@ -41,7 +41,6 @@ async def lifespan(app: FastAPI):
         collect_news, "interval", minutes=NEWS_INTERVAL_MINUTES
     )  # 뉴스도 15분마다
     scheduler.start()
-    scheduler.start()
     yield  # 여기서부터 서버가 요청을 받는다.
     scheduler.shutdown()  # 종료할 때 스케줄러도 멈춘다.
 

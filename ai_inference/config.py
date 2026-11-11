@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # 모델 이름은 코드에 박지 않고 설정으로 둔다 (small로 바꾸거나 비교 실험할 때 .env만 고치면 된다).
     kronos_model: str = "NeoQuasar/Kronos-base"
     kronos_tokenizer: str = "NeoQuasar/Kronos-Tokenizer-base"
+    sentiment_model: str = "ProsusAI/finbert"
 
     # 같은 입력으로 몇번 시뮬레이션 할지
     sample_count: int = 300
