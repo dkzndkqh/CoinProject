@@ -1,8 +1,15 @@
 import logging
 import time
 
-from backend_client import get_candles, get_latest_base_time, post_forecast
-from config import INPUTS, MARKETS
+import sentiment
+from backend_client import (
+    get_candles,
+    get_latest_base_time,
+    get_unscored_news,
+    post_forecast,
+    post_news_analysis,
+)
+from config import INPUTS, MARKETS, settings
 from forecaster import STEP, load_predictor, make_forecasts, model_label
 
 # logging은 자바의 SLF4J/Logger와 같다. print보다 시각과 수준(INFO, ERROR)이 같이 찍혀서
@@ -11,6 +18,9 @@ log = logging.getLogger("ai_inference")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 CHECK_INTERVAL_SEC = 15 * 60  # 새 봉이 생겼는지 확인하는 주기 (15분)
+
+# 뉴스 분석 전인 기사를 한 번에 가져오는 수.
+NEWS_BATCH = 100
 
 # 기록 장부: '마지막으로 계산한 기준 시각'을 (코인, 입력 봉) 단위로 적어 둔다.
 # 예: {("KRW-BTC", "4h"): 2026-10-30 04:00 UTC}
@@ -60,6 +70,25 @@ def run_once(predictor) -> None:
                 log.exception("실패: %s %s (다음 확인 때 다시 시도)", market, timeframe)
 
 
+def process_news(tokenizer, model) -> None:
+    """분석 전 기사를 받아 FinBERT로 분석하고 결과를 백엔드에 올린다."""
+    articles = get_unscored_news(NEWS_BATCH)
+    if not articles:
+        return
+
+    # 제목과 요약을 한글로 합침.
+    texts = [f"{a['title']}. {a['summary'] or ''}".strip() for a in articles]
+
+    results = sentiment.analyze(tokenizer, model, texts)
+
+    payload = [
+        {"id": a["id"], **r, "model_name": settings.sentiment_model}
+        for a, r in zip(articles, results)
+    ]
+    updated = post_news_analysis(payload)
+    log.info("뉴스 분석 완료: %d건 중 새로 저장 %d건", len(payload), updated)
+
+
 def restore_last_done() -> None:
     """서버가 켜질 때 한 번, 백엔드에 '어디까지 저장했어?'를 물어서 last_done을 채운다.
     이걸 안 하면 껐다 켤 때마다 이미 끝낸 모델 예측을 다시 돌린다 (코인당 약 3분 GPU).
@@ -90,6 +119,8 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     predictor = load_predictor()  # 모델은 시작할 때 한 번만 불러온다 (무거운 작업)
+    news_tokenizer, news_model = sentiment.load_model()
+
     log.info(
         "시작: %d개 코인, 입력 봉 %s, %d분마다 확인",
         len(MARKETS),
@@ -99,6 +130,10 @@ def main() -> None:
     restore_last_done()
     while True:  # 끝나지 않는 반복. Ctrl+C로 멈춘다.
         run_once(predictor)
+        try:
+            process_news(news_tokenizer, news_model)
+        except Exception:
+            log.exception("뉴스 분석 실패 (다음 확인 때 다시 시도)")
         time.sleep(CHECK_INTERVAL_SEC)  # 15분 쉰다
 
 
