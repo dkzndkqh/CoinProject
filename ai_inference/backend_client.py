@@ -73,3 +73,34 @@ def get_latest_base_time(market: str, model_name: str):
     # 응답이 null이면 None, 아니면 시간대가 있는 시각으로 바꾼다.
     # 다른 곳(main.py)의 기준 시각과 == 로 비교하므로 같은 타입(UTC 시각)이어야 한다.
     return None if value is None else pd.to_datetime(value, utc=True)
+
+
+def get_unscored_news(limit: int = 100) -> list[dict]:
+    """뉴스 분석 전인 기사를 백엔드에서 받아 온다 (최신순).
+    돌려주는 값: [{"id": 12, "title": "...", "summary": "..." 또는 None}, ...]
+    기사가 없으면 빈 목록 []. limit은 백엔드가 1~200까지만 받는다.
+    """
+    resp = httpx.get(
+        f"{settings.backend_url}/api/internal/news/unscored",
+        params={"limit": limit},
+        headers={"X-API-Key": settings.internal_api_key},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def post_news_analysis(results: list[dict]) -> int:
+    """뉴스 분석 결과를 백엔드에 올린다.
+    results: [{"id": 12, "label": "positive", "score": 0.75, "model_name": "ProsusAI/finbert"}, ...]
+            (한 번에 1~200건. 백엔드가 이 범위를 벗어나면 422로 거절한다)
+    돌려주는 값: 새로 저장된 건수. 이미 분석된 기사는 백엔드가 건너뛰어서 results보다 적을 수 있다.
+    """
+    resp = httpx.post(
+        f"{settings.backend_url}/api/internal/news/sentiment",
+        json={"results": results},
+        headers={"X-API-Key": settings.internal_api_key},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()["updated"]
