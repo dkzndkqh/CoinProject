@@ -95,3 +95,57 @@ def ask_with_tool(system: str, user: str, tool: dict, max_tokens: int = 2048) ->
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
     }
+
+
+def ask_with_tools(
+    system: str,
+    messages: list,
+    tools: list[dict],
+    force_tool: str | None = None,
+    max_tokens: int = 2048,
+) -> dict:
+    """도구 여러 개를 주고, 지금까지의 대화(messages)에 이어서 Claude를 한 번 부른다.
+    도구 호출 반복문이 이 함수를 여러 번 부른다. 반복문 자체는 호출하는 쪽(서비스)이 만든다.
+
+    messages: [{"role": "user"|"assistant", "content": ...}, ...] 지금까지의 전체 대화.
+        Claude는 이전 호출을 기억하지 못해서 매번 전부 다시 보낸다.
+    tools: 쓸 수 있는 도구 목록 (이름, 설명, 입력 스키마).
+    force_tool: 도구 이름을 주면 그 도구를 반드시 호출하게 강제한다 (마지막 차례에 답안 제출을 강제할 때).
+        None이면 Claude가 도구를 쓸지, 어떤 걸 쓸지 스스로 정한다 (auto).
+    돌려주는 값:
+        content: Claude 응답 블록 그대로. 다음 호출의 messages에 assistant 메시지로 붙여야 한다.
+        tool_uses: Claude가 요청한 도구 호출 목록 [{"id", "name", "input"}]. 없으면 빈 목록.
+        stop_reason, input_tokens, output_tokens
+    """
+    _check_key()
+
+    # force_tool 이 있으면 그 도구를 강제, 없으면 자동 선택
+    tool_choice = (
+        {"type": "tool", "name": force_tool} if force_tool else {"type": "auto"}
+    )
+
+    try:
+        response = _client.messages.create(
+            model=settings.llm_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
+    except anthropic.APIError as e:
+        raise LLMError(str(e)) from e
+
+    # 응답에서 도구 요청 블록만 뽑는다. Claude는 한 번에 도구를 여러 개 요청할 수도 있다.
+    tool_uses = [
+        {"id": b.id, "name": b.name, "input": b.input}
+        for b in response.content
+        if b.type == "tool_use"
+    ]
+    return {
+        "content": response.content,
+        "tool_uses": tool_uses,
+        "stop_reason": response.stop_reason,
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
