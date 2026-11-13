@@ -45,9 +45,17 @@ GOOD = {
 
 
 def raw(tool_input, stop_reason="tool_use"):
-    """llm.ask_with_tool이 돌려주는 모양의 가짜 응답."""
+    """llm.ask_with_tools가 돌려주는 모양의 가짜 응답. 답안 제출 도구를 부른 응답이다.
+    tool_input이 None이면 도구를 하나도 안 부르고 글로만 답한 응답이다.
+    """
+    tool_uses = (
+        []
+        if tool_input is None
+        else [{"id": "t1", "name": "submit_analysis", "input": tool_input}]
+    )
     return {
-        "input": tool_input,
+        "content": [],
+        "tool_uses": tool_uses,
         "stop_reason": stop_reason,
         "input_tokens": 100,
         "output_tokens": 50,
@@ -92,22 +100,23 @@ def setup(monkeypatch):
     """데이터 조립, 분류 단계, 분석 호출을 가짜로 바꾼다. DB와 실제 API가 필요 없다.
     분류는 기본으로 "analyze"(코인·기간 없음)를 돌려준다. 다른 분류가 필요한 테스트는 set_plan으로 덮어쓴다.
     돌려주는 값: (calls, responses)
-      calls: ask_with_tool이 받은 (system, user)가 순서대로 쌓이는 목록
+      calls: ask_with_tools가 받은 (system, user)가 순서대로 쌓이는 목록
       responses: 테스트가 미리 넣어 두는 응답 목록. 호출될 때마다 맨 앞에서 하나씩 꺼내 준다.
                  응답 자리에 에러 객체를 넣어 두면 그 호출에서 에러를 던진다.
     """
     calls = []
     responses = []
 
-    def fake_ask(system, user, tool, **kwargs):
-        calls.append((system, user))
+    def fake_ask(system, messages, tools, force_tool=None, **kwargs):
+        # 첫 메시지가 사용자 질문과 데이터다. 기존 테스트가 (system, user)로 확인하므로 그 모양을 유지한다.
+        calls.append((system, messages[0]["content"]))
         item = responses.pop(0)  # 맨 앞 응답을 꺼낸다 (자바 Queue.poll)
         if isinstance(item, Exception):
             raise item
         return item
 
     monkeypatch.setattr(agent_service, "build_agent_input", lambda db, m: FAKE_DATA)
-    monkeypatch.setattr(llm, "ask_with_tool", fake_ask)
+    monkeypatch.setattr(llm, "ask_with_tools", fake_ask)
     set_plan(monkeypatch)
     return calls, responses
 
