@@ -83,3 +83,92 @@ def test_API_호출이_실패하면_LLMError로_바꾼다(monkeypatch):
 
     with pytest.raises(llm.LLMError):
         llm.ask_with_tool("규칙", "질문", TOOL)
+
+
+# ---- ask_with_tools: 대화를 이어 가며 도구 여러 개를 쓰는 호출 ----
+
+NEWS_TOOL = {
+    "name": "get_news",
+    "description": "뉴스 기사를 조회한다",
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+
+def test_ask_with_tools_도구_요청을_id와_함께_목록으로_돌려준다(monkeypatch):
+    # Claude가 도구를 두 개 한꺼번에 요청한 경우. id는 나중에 결과를 맞춰 돌려줄 때 필요하다.
+    blocks = [
+        SimpleNamespace(type="text", text="기사를 볼게요"),
+        SimpleNamespace(type="tool_use", id="t1", name="get_news", input={"days": 7}),
+        SimpleNamespace(type="tool_use", id="t2", name="get_news", input={"days": 30}),
+    ]
+    monkeypatch.setattr(llm, "_client", fake_client(blocks))
+
+    result = llm.ask_with_tools(
+        "규칙", [{"role": "user", "content": "질문"}], [NEWS_TOOL]
+    )
+
+    assert result["tool_uses"] == [
+        {"id": "t1", "name": "get_news", "input": {"days": 7}},
+        {"id": "t2", "name": "get_news", "input": {"days": 30}},
+    ]
+    assert result["content"] == blocks  # 다음 호출에 assistant 메시지로 붙일 원본
+    assert result["stop_reason"] == "tool_use"
+    assert result["input_tokens"] == 100
+
+
+def test_ask_with_tools_도구_요청이_없으면_빈_목록이다(monkeypatch):
+    text_block = SimpleNamespace(type="text", text="그냥 글로 답함")
+    monkeypatch.setattr(llm, "_client", fake_client([text_block], "end_turn"))
+
+    result = llm.ask_with_tools(
+        "규칙", [{"role": "user", "content": "질문"}], [NEWS_TOOL]
+    )
+
+    assert result["tool_uses"] == []
+
+
+def test_ask_with_tools_force_tool이_없으면_auto다(monkeypatch):
+    calls = []
+    monkeypatch.setattr(llm, "_client", fake_client([], "end_turn", calls=calls))
+    messages = [{"role": "user", "content": "질문"}]
+
+    llm.ask_with_tools("규칙", messages, [NEWS_TOOL, TOOL])
+
+    # 도구 목록과 대화 전체를 그대로 보내고, 도구 선택은 Claude에게 맡긴다
+    assert calls[0]["tools"] == [NEWS_TOOL, TOOL]
+    assert calls[0]["messages"] == messages
+    assert calls[0]["tool_choice"] == {"type": "auto"}
+
+
+def test_ask_with_tools_force_tool이_있으면_그_도구를_강제한다(monkeypatch):
+    calls = []
+    monkeypatch.setattr(llm, "_client", fake_client([], "end_turn", calls=calls))
+
+    llm.ask_with_tools(
+        "규칙",
+        [{"role": "user", "content": "질문"}],
+        [NEWS_TOOL, TOOL],
+        force_tool="submit_analysis",
+    )
+
+    assert calls[0]["tool_choice"] == {"type": "tool", "name": "submit_analysis"}
+
+
+def test_ask_with_tools_API_호출이_실패하면_LLMError로_바꾼다(monkeypatch):
+    def boom(**kwargs):
+        raise anthropic.APIConnectionError(
+            request=httpx.Request("POST", "https://example.com")
+        )
+
+    monkeypatch.setattr(
+        llm, "_client", SimpleNamespace(messages=SimpleNamespace(create=boom))
+    )
+
+    with pytest.raises(llm.LLMError):
+        llm.ask_with_tools("규칙", [{"role": "user", "content": "질문"}], [NEWS_TOOL])
+
+
+def test_ask_with_tools_키가_없으면_RuntimeError(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    with pytest.raises(RuntimeError):
+        llm.ask_with_tools("규칙", [{"role": "user", "content": "질문"}], [NEWS_TOOL])

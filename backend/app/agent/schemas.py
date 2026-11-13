@@ -154,3 +154,20 @@ class QuestionPlan(BaseModel):
             description="질문 문장에 기간이 직접 적혀 있을 때만 채운다. 예: 4h, 12h, 1d, 2d, 7d. 기간이 없으면 null",
         )
     )
+
+
+class NewsQuery(BaseModel):
+    """`get_news` 도구의 입력. Claude가 채운 값이 이 규칙에 맞는지 검사한다.
+    AnalysisResult와 같은 방식이다: 검증은 model_validate, Claude에게 줄 설명은 model_json_schema().
+    범위(days 1~30, limit 1~10)를 코드가 막는 이유: Claude가 days=9999, limit=1000처럼
+    엉뚱한 값을 주면 토큰 비용이 폭주하기 때문이다.
+    """
+
+    days: int = Field(
+        default=30, ge=1, le=30, description="최근 며칠 안의 기사를 볼지. 1~30"
+    )
+    limit: int = Field(default=5, ge=1, le=10, description="몇 건을 가져올지. 1~10")
+    sort: Literal["recent", "impact"] = Field(
+        default="recent",
+        description="recent: 최신순. impact: FinBERT 점수가 아주 높거나 낮은 기사부터 (큰 호재나 악재를 찾을 때)",
+    )
