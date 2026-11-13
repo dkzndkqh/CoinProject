@@ -12,6 +12,7 @@ from app.clients import llm
 from app.core.exceptions import AnalysisUnavailableError, NotFoundError
 from app.forecast import service as forecast_service
 from app.market import service as market_service
+from app.news import service as news_service
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ def build_agent_input(db: Session, market: str) -> dict | None:
         "recent_returns_pct": market_service.get_recent_returns(db, market, price),
         "indicators": {"4h": judgement["4h"], "1d": judgement["1d"]},
         "forecasts": forecasts,
+        "news": news_service.get_sentiment_summary(db),
     }
 
 
