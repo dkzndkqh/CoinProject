@@ -5,7 +5,7 @@ from sqlalchemy import delete
 
 from app.core.db import SessionLocal
 from app.news.models import NewsArticle
-from app.news.service import get_sentiment_summary
+from app.news.service import get_articles, get_sentiment_summary
 
 
 @pytest.fixture
@@ -98,3 +98,38 @@ def test_unscored_articles_are_not_counted(db):
     add(db, 2, None, None)
 
     assert get_sentiment_summary(db)["last_24h"] is None
+
+
+def test_get_articles_recent_is_newest_first_and_respects_limit(db):
+    """sort="recent": 최신 기사가 먼저 온다. limit개까지만 돌려준다. 점수로 구분하려고 서로 다른 값을 쓴다."""
+    add(db, 50, "neutral", 0.1)  # 가장 오래됨
+    add(db, 10, "neutral", 0.2)
+    add(db, 1, "neutral", 0.3)  # 가장 최신
+
+    scores = [a["score"] for a in get_articles(db, days=30, limit=2, sort="recent")]
+
+    assert scores == [0.3, 0.2]
+
+
+def test_get_articles_impact_orders_by_absolute_score(db):
+    """sort="impact": 점수 절댓값이 큰 순. -0.9와 +0.5는 -0.9가 먼저 온다(음수도 큰 영향으로 본다).
+    점수 없는 기사는 최신이어도 맨 뒤다.
+    """
+    add(db, 1, None, None)  # 점수 없음: 가장 최신이지만 맨 뒤
+    add(db, 20, "positive", 0.5)
+    add(db, 30, "negative", -0.9)
+    add(db, 40, "neutral", 0.1)
+
+    scores = [a["score"] for a in get_articles(db, days=30, limit=10, sort="impact")]
+
+    assert scores == [-0.9, 0.5, 0.1, None]
+
+
+def test_get_articles_excludes_articles_older_than_days(db):
+    """days 밖의 기사는 빠진다. 3일 이내만 요청하면 5일 전 기사는 안 나온다."""
+    add(db, 10, "neutral", 0.1)  # 10시간 전: 포함
+    add(db, 120, "negative", -0.9)  # 5일 전: 제외
+
+    scores = [a["score"] for a in get_articles(db, days=3, limit=10, sort="impact")]
+
+    assert scores == [0.1]

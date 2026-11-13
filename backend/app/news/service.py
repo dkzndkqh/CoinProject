@@ -156,3 +156,38 @@ def get_sentiment_summary(db: Session) -> dict:
         name: _summarize_window(db, newer, older)
         for name, (newer, older) in NEWS_WINDOWS.items()
     }
+
+
+def get_articles(db: Session, days: int, limit: int, sort: str) -> list[dict]:
+    """최근 days일 안에 발행된 기사를 limit개 돌려준다. 에이전트의 get_news 도구가 부른다.
+    sort="recent": 최신순.
+    sort="impact": 점수 절댓값이 큰 순 (아주 좋거나 아주 나쁜 기사부터). 점수 없는 기사는 맨 뒤.
+    값의 범위 검사(days 1~30 등)는 이 함수가 아니라 호출하는 쪽에서 한다.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    stmt = select(NewsArticle).where(NewsArticle.published_at >= cutoff)
+
+    if sort == "impact":
+        # func.abs(): 절댓값. -0.9와 +0.9를 같은 크기로 본다.
+        # .desc().nulls_last(): 큰 순서대로, NULL(점수 없음)은 맨 뒤로. SQL의 ORDER BY ... DESC NULLS LAST.
+        # 점수가 같으면 최신 기사가 먼저 오게 두 번째 정렬 기준을 붙인다.
+        stmt = stmt.order_by(
+            func.abs(NewsArticle.sentiment_score).desc().nulls_last(),
+            NewsArticle.published_at.desc(),
+        )
+    else:
+        stmt = stmt.order_by(NewsArticle.published_at.desc())
+
+    # db.scalars(): 행마다 첫 칸(여기서는 NewsArticle 객체)만 꺼낸다.
+    # 시각은 UTC datetime 그대로 둔다. KST 문자열로 바꾸는 건 에이전트 쪽 몫이다.
+    return [
+        {
+            "published_at": a.published_at,
+            "source": a.source,
+            "title": a.title,
+            "summary": a.summary,
+            "label": a.sentiment_label,
+            "score": a.sentiment_score,
+        }
+        for a in db.scalars(stmt.limit(limit))
+    ]
