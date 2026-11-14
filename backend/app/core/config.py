@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # 에이전트가 쓸 모델 이름. 코드에 박지 않고 .env(LLM_MODEL)로 바꿀 수 있게 한다.
     llm_model: str = "claude-haiku-4-5"
 
+    # CORS로 허용할 프론트 출처 목록. 쉼표로 구분한 문자열로 .env(CORS_ORIGINS)에서 읽는다.
+    # 개발 기본값은 Vite 개발 서버 주소. 7단계 배포 때는 CloudFront 주소로 .env만 바꾸면 된다.
+    # localhost와 127.0.0.1은 브라우저가 서로 다른 출처로 보므로 둘 다 넣는다.
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
 
 # 앱 전체에서 이 인스턴스 하나를 import
 settings = Settings()

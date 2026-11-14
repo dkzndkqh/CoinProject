@@ -2,8 +2,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.router import router as agent_router
+from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.scheduler import scheduler
 from app.forecast.internal_router import router as internal_forecast_router
@@ -55,4 +57,14 @@ app.include_router(agent_router)
 app.include_router(internal_forecast_router)
 app.include_router(internal_market_router)
 app.include_router(internal_news_router)
+
+# CORS 미들웨어: 모든 요청이 라우터에 닿기 전에 지나가는 필터(자바의 서블릿 Filter와 비슷).
+# 브라우저가 보낸 Origin 헤더가 허용 목록에 있으면 응답에 허용 헤더를 붙여 준다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
 register_exception_handlers(app)  # 에러 -> 공통 JSON 응답 변환기를 앱에 등록
