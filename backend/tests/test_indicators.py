@@ -4,7 +4,12 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from app.market.indicators import add_indicators, judge_indicators, load_candles_df
+from app.market.indicators import (
+    MAX_CANDLES,
+    add_indicators,
+    judge_indicators,
+    load_candles_df,
+)
 
 # float("nan"): NaN(숫자가 아님, 값이 없음)을 만든다. 자바의 Double.NaN과 같다.
 # 지표 계산 초반처럼 "데이터가 모자란 칸"을 흉내 낼 때 쓴다.
@@ -255,3 +260,33 @@ def test_캔들이_부족하면_장기_지표는_데이터_부족():
     assert result["moving_average"]["vs_ma200"] == "데이터 부족"
     assert result["moving_average"]["alignment"] == "데이터 부족"
     assert result["ichimoku"]["cloud"] == "데이터 부족"
+
+
+# ─────────────── load_candles_df: 최근 N개만 읽기 ───────────────
+
+
+class RecordingDB(FakeDB):
+    """FakeDB에 더해, 받은 쿼리(stmt)를 기억해 둔다. 어떤 SQL을 만들었는지 검사하려는 용도다."""
+
+    def scalars(self, stmt):
+        self.stmt = stmt
+        return super().scalars(stmt)
+
+
+def test_최근_캔들만_읽도록_최신순_정렬과_개수_제한이_쿼리에_들어간다():
+    db = RecordingDB([make_candle(0, 100.0)])
+    load_candles_df(db, "KRW-BTC", "4h")
+
+    # str(stmt): SQLAlchemy가 만든 SQL 문장. DESC가 있어야 "가장 최근 것부터" 자른다.
+    assert "DESC" in str(db.stmt)
+    # compile().params: 쿼리에 묶인 값들. LIMIT 값(MAX_CANDLES)이 들어 있어야 한다.
+    assert MAX_CANDLES in db.stmt.compile().params.values()
+
+
+def test_DB가_최신순으로_돌려줘도_표는_시간순으로_정렬된다():
+    # 쿼리를 desc로 바꿨으므로 DB는 최신 -> 과거 순서로 준다. 그 순서 그대로 넣어 본다.
+    candles = [make_candle(8, 120.0), make_candle(4, 110.0), make_candle(0, 100.0)]
+    df = load_candles_df(FakeDB(candles), "KRW-BTC", "4h")
+
+    assert df.index.is_monotonic_increasing  # 오래된 -> 최신 순서
+    assert list(df["close"]) == [100.0, 110.0, 120.0]

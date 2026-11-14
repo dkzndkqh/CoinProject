@@ -9,6 +9,8 @@ from app.market.models import Candle
 # 지표는 4h, 1d만 쓰기로 했으므로 둘만 둔다 (1h는 지표에 쓰지 않는다).
 FREQ = {"4h": "4h", "1d": "1D"}
 
+MAX_CANDLES = 1500
+
 # DB에서 캔들 읽고 난 후 데이터프레임에 맞춰서 데이터 가공 후 결측 보정
 
 
@@ -23,7 +25,8 @@ def load_candles_df(db: Session, market: str, timeframe: str) -> pd.DataFrame:
     stmt = (
         select(Candle)
         .where(Candle.market == market, Candle.timeframe == timeframe)
-        .order_by(Candle.candle_time)
+        .order_by(Candle.candle_time.desc())
+        .limit(MAX_CANDLES)
     )
     candles = db.scalars(stmt).all()  # Candle 객체 리스트 (자바의 List<Candle>)
 
@@ -50,6 +53,8 @@ def load_candles_df(db: Session, market: str, timeframe: str) -> pd.DataFrame:
 
     # 3) candle_time을 인덱스(행 이름표)로 쓴다. 시간으로 행을 찾고 정렬하기 위함이다.
     df = df.set_index("candle_time")
+
+    df = df.sort_index()
 
     # 4) 빠짐없는 시간 격자를 만든다. 첫 캔들 ~ 마지막 캔들 사이를 4h(또는 1D) 간격으로 전부 나열한다.
     #    예: 00:00, 04:00, 08:00, ... 중에 DB에 없는 시각이 있으면 아래 reindex가 빈 행을 만든다.
