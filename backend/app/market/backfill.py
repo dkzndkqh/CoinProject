@@ -14,7 +14,7 @@ MARKETS = ["KRW-BTC", "KRW-ETH"]
 TIMEFRAMES = ["1h", "4h", "1d"]
 
 # 이 시각부터 현재까지 채운다 (2025-01-01 00:00 UTC).
-START = datetime(2025, 1, 1, tzinfo=UTC)
+START = datetime(2017, 1, 1, tzinfo=UTC)
 
 # 한 번에 받을 개수. 업비트 최대값이 200이다.
 PAGE_SIZE = 200
