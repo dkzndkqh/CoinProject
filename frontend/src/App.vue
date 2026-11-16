@@ -2,7 +2,10 @@
 import { ref } from "vue";
 import CandleChart from "./components/CandleChart.vue";
 import { useThemeStore } from "./stores/theme";
+import { useIndicatorStore } from "./stores/indicators";
+import { MA_LIST } from "./utils/indicators";
 
+const ind = useIndicatorStore();
 const timeframe = ref("1d");
 const theme = useThemeStore(); // 공유 스토어를 꺼낸다. theme.theme, theme.toggle() 로 쓴다.
 
@@ -41,6 +44,18 @@ const timeframes = [
           </button>
         </div>
       </header>
+
+      <!-- 이동평균선 켜기/끄기 칩. 켜진 건 .on 클래스로 강조, 앞의 작은 점은 선 색 -->
+      <div class="chips">
+        <button
+          v-for="m in MA_LIST"
+          :key="m.period"
+          :class="{ on: ind.maOn.includes(m.period) }"
+          @click="ind.toggleMa(m.period)"
+        >
+          <i :style="{ background: m[theme.theme] }"></i>MA{{ m.period }}
+        </button>
+      </div>
 
       <CandleChart coin="btc" :timeframe="timeframe" />
     </section>
@@ -138,6 +153,34 @@ body {
 .tabs button.active {
   background: var(--tab-active-bg);
   color: var(--tab-active-text);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap; /* 모바일에서 줄바꿈 */
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chips button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chips button.on {
+  color: var(--text);
+  border-color: var(--text);
+}
+.chips i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 .theme-btn {

@@ -4,9 +4,12 @@ import {
   createChart,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries, // 이동평균선용
 } from "lightweight-charts";
 import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
+import { useIndicatorStore } from "../stores/indicators";
+import { MA_LIST, sma } from "../utils/indicators";
 
 const props = defineProps({
   coin: { type: String, default: "btc" },
@@ -14,6 +17,7 @@ const props = defineProps({
 });
 
 const theme = useThemeStore();
+const ind = useIndicatorStore();
 
 // 모드별 차트 색. 차트는 CSS 변수를 못 읽어서(JS 옵션으로 받는다) 여기에 따로 둔다.
 const palettes = {
@@ -38,6 +42,7 @@ const error = ref("");
 let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
+const maSeries = {}; // { 5: 선시리즈, 20: ... } 기간으로 찾기 위한 보관함
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
@@ -49,15 +54,21 @@ async function load() {
   try {
     const rows = await fetchCandles(props.coin, props.timeframe, 300);
 
-    candleSeries.setData(
-      rows.map((r) => ({
-        time: toSec(r.candle_time),
-        open: r.open,
-        high: r.high,
-        low: r.low,
-        close: r.close,
-      })),
-    );
+    // 차트 형식으로 한 번만 변환해 두고, 캔들과 이동평균 계산에 같이 쓴다.
+    const candles = rows.map((r) => ({
+      time: toSec(r.candle_time),
+      open: r.open,
+      high: r.high,
+      low: r.low,
+      close: r.close,
+    }));
+    candleSeries.setData(candles);
+
+    // 이동평균선은 꺼져 있어도 값은 미리 넣어 둔다. (켜는 순간 바로 보이게)
+    for (const { period } of MA_LIST) {
+      maSeries[period].setData(sma(candles, period));
+    }
+
     volumeSeries.setData(
       rows.map((r) => ({
         time: toSec(r.candle_time),
@@ -96,15 +107,44 @@ onMounted(() => {
     .priceScale()
     .applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
-  load();
+  // 이동평균선 5개를 모두 만들고, 꺼진 건 visible:false로 숨겨 둔다.
+  for (const m of MA_LIST) {
+    maSeries[m.period] = chart.addSeries(LineSeries, {
+      color: m[theme.theme], // 현재 모드의 색 (m.dark 또는 m.light)
+      lineWidth: 1,
+      priceLineVisible: false, // 오른쪽 현재가 가로선 숨김
+      lastValueVisible: false, // 오른쪽 축의 값 라벨 숨김
+      crosshairMarkerVisible: false,
+      visible: ind.maOn.includes(m.period),
+    });
+  }
+
+  load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });
 
+// 코인이나 봉이 바뀌면 다시 받아서 그린다.
 watch(() => [props.coin, props.timeframe], load);
 
-// 테마가 바뀌면 차트 색만 바꾼다. 캔들을 다시 받을 필요는 없다.
+// 테마가 바뀌면 차트 색과 선 색만 바꾼다. 캔들을 다시 받을 필요는 없다.
 watch(
   () => theme.theme,
-  (mode) => chart?.applyOptions(chartColors(mode)),
+  (mode) => {
+    chart?.applyOptions(chartColors(mode));
+    for (const m of MA_LIST) {
+      maSeries[m.period]?.applyOptions({ color: m[mode] });
+    }
+  },
+);
+
+// 켜고 끄는 선택이 바뀌면 선을 보이거나 숨긴다. 데이터를 다시 받지 않는다.
+watch(
+  () => ind.maOn,
+  (on) => {
+    for (const { period } of MA_LIST) {
+      maSeries[period]?.applyOptions({ visible: on.includes(period) });
+    }
+  },
+  { deep: true },
 );
 
 onUnmounted(() => {
