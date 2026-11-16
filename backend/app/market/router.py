@@ -1,11 +1,13 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.exceptions import NotFoundError
 from app.market import service
+from app.market.schemas import CandleResponse
 
 # APIRouter: URL 묶음. 스프링 컨트롤러 클래스에 붙이는 @RequestMapping("/api/market")과 같다.
 # main.py에서 app.include_router()로 앱에 붙인다.
@@ -45,3 +47,29 @@ def get_indicators(
     if result is None:
         raise NotFoundError("캔들 데이터가 아직 없습니다")
     return result  # dict를 돌려주면 FastAPI가 JSON으로 바꿔 응답한다
+
+
+@router.get(
+    "/{coin}/candles",
+    response_model=list[CandleResponse],
+    summary="차트용 캔들 조회 (진행 중 캔들 포함, 오래된 순)",
+    responses={404: {"description": "지원하지 않는 코인"}},
+)
+def get_candles(
+    coin: Annotated[str, Path(description="btc 또는 eth", examples=["btc"])],
+    timeframe: Annotated[Literal["1h", "4h", "1d"], Query(description="봉 종류")],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000, description="최근 몇 개")] = 300,
+    end_time: Annotated[
+        datetime | None, Query(description="이 시각 이전 캔들만 (UTC, 선택)")
+    ] = None,
+):
+    """GET /api/market/btc/candles?timeframe=1h&limit=300 -> 캔들 배열(JSON)."""
+    market = MARKETS.get(coin.lower())
+    if market is None:
+        raise NotFoundError("지원하지 않는 코인입니다 (btc, eth)")
+
+    # inclued_open = True: 차트는 지금 만들어지는 캔들도 보여야 함
+    return service.get_closed_candles(
+        db, market, timeframe, limit, end_time=end_time, include_open=True
+    )

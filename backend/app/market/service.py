@@ -144,6 +144,7 @@ def get_closed_candles(
     limit: int,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    include_open: bool = False,
 ) -> list[Candle]:
     """마감된 캔들만 오래된 순서로 돌려준다. ai_inference(Kronos 입력)가 쓴다.
     규칙
@@ -159,8 +160,9 @@ def get_closed_candles(
 
     # 마감 조건: candle_time + 봉 길이 <= 지금 -> candle_time <= 지금 - 봉 길이
     latest_closed = datetime.now(UTC) - TIMEFRAME_DELTAS[timeframe]
+    latest = datetime.now(UTC) if include_open else latest_closed
     # end_time이 있으면 둘 중 더 이른 시각이 상한이다.
-    upper = min(end_time, latest_closed) if end_time else latest_closed
+    upper = min(end_time, latest) if end_time else latest
 
     # select(Candle).where(...): SELECT * FROM candles WHERE ... (여러 조건은 AND로 묶인다)
     stmt = select(Candle).where(
