@@ -3,7 +3,6 @@ import { ref } from "vue";
 import CandleChart from "./components/CandleChart.vue";
 import { useThemeStore } from "./stores/theme";
 import { useIndicatorStore } from "./stores/indicators";
-import { MA_LIST } from "./utils/indicators";
 
 const ind = useIndicatorStore();
 const timeframe = ref("1d");
@@ -48,12 +47,14 @@ const timeframes = [
       <!-- 이동평균선 켜기/끄기 칩. 켜진 건 .on 클래스로 강조, 앞의 작은 점은 선 색 -->
       <div class="chips">
         <button
-          v-for="m in MA_LIST"
-          :key="m.period"
-          :class="{ on: ind.maOn.includes(m.period) }"
-          @click="ind.toggleMa(m.period)"
+          v-for="(m, i) in ind.ma"
+          :key="i"
+          :class="{ on: m.on }"
+          @click="ind.toggleMa(i)"
         >
-          <i :style="{ background: m[theme.theme] }"></i>MA{{ m.period }}
+          <i :style="{ background: ind.maColor(i, theme.theme) }"></i>MA{{
+            m.period
+          }}
         </button>
       </div>
 

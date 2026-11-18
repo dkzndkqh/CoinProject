@@ -1,7 +1,7 @@
 // 이동평균선 목록: 기간과 모드별 선 색. 기간은 백엔드 지표 판정과 같은 표준값(5/20/60/120/200).
 // dark는 어두운 배경용(밝고 선명), light는 흰 배경용(진하고 선명).
 // MA200은 파란 캔들(하락)과 안 헷갈리게 흰색/검정 계열로 둔다.
-export const MA_LIST = [
+export const MA_DEFAULTS = [
   { period: 5, dark: "#ffd60a", light: "#ff9800" },
   { period: 20, dark: "#ff4d9d", light: "#e6007a" },
   { period: 60, dark: "#00e676", light: "#00a152" },
@@ -23,3 +23,4 @@ export function sma(candles, period) {
   }
   return out;
 }
+

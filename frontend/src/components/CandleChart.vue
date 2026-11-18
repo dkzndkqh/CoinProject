@@ -9,7 +9,7 @@ import {
 import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
 import { useIndicatorStore } from "../stores/indicators";
-import { MA_LIST, sma } from "../utils/indicators";
+import { MA_DEFAULTS, sma } from "../utils/indicators";
 
 const props = defineProps({
   coin: { type: String, default: "btc" },
@@ -42,11 +42,24 @@ const error = ref("");
 let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
-const maSeries = {}; // { 5: 선시리즈, 20: ... } 기간으로 찾기 위한 보관함
+const maSeries = []; // 슬롯 번호(0~4)로 찾는 선 시리즈 배열
+let lastCandles = []; // 가장 최근 캔들. 기간이 바뀌면 이걸로 선을 다시 계산한다.
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
   return Math.floor(Date.parse(s) / 1000);
+}
+
+// 스토어의 MA 설정(기간·색·켜짐)을 차트에 반영한다.
+// 로드 직후, 설정이 바뀔 때, 테마가 바뀔 때 모두 이 함수 하나를 부른다.
+function applyMa() {
+  ind.ma.forEach((m, i) => {
+    maSeries[i].setData(sma(lastCandles, m.period)); // 기간이 바뀌었을 수 있어서 다시 계산
+    maSeries[i].applyOptions({
+      visible: m.on,
+      color: ind.maColor(i, theme.theme),
+    });
+  });
 }
 
 async function load() {
@@ -64,10 +77,8 @@ async function load() {
     }));
     candleSeries.setData(candles);
 
-    // 이동평균선은 꺼져 있어도 값은 미리 넣어 둔다. (켜는 순간 바로 보이게)
-    for (const { period } of MA_LIST) {
-      maSeries[period].setData(sma(candles, period));
-    }
+    lastCandles = candles;
+    applyMa(); // 이동평균선 5개 계산 + 켜짐·색 적용
 
     volumeSeries.setData(
       rows.map((r) => ({
@@ -107,15 +118,13 @@ onMounted(() => {
     .priceScale()
     .applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
-  // 이동평균선 5개를 모두 만들고, 꺼진 건 visible:false로 숨겨 둔다.
-  for (const m of MA_LIST) {
-    maSeries[m.period] = chart.addSeries(LineSeries, {
-      color: m[theme.theme], // 현재 모드의 색 (m.dark 또는 m.light)
+  // 이동평균선 시리즈 5개를 만든다. 기간·색·켜짐은 applyMa()가 채운다.
+  for (let i = 0; i < MA_DEFAULTS.length; i++) {
+    maSeries[i] = chart.addSeries(LineSeries, {
       lineWidth: 1,
-      priceLineVisible: false, // 오른쪽 현재가 가로선 숨김
-      lastValueVisible: false, // 오른쪽 축의 값 라벨 숨김
+      priceLineVisible: false,
+      lastValueVisible: false,
       crosshairMarkerVisible: false,
-      visible: ind.maOn.includes(m.period),
     });
   }
 
@@ -130,19 +139,15 @@ watch(
   () => theme.theme,
   (mode) => {
     chart?.applyOptions(chartColors(mode));
-    for (const m of MA_LIST) {
-      maSeries[m.period]?.applyOptions({ color: m[mode] });
-    }
+    if (maSeries.length) applyMa();
   },
 );
 
-// 켜고 끄는 선택이 바뀌면 선을 보이거나 숨긴다. 데이터를 다시 받지 않는다.
+// 이동평균 설정(기간·색·켜짐)이 바뀌면 선을 다시 반영한다.
 watch(
-  () => ind.maOn,
-  (on) => {
-    for (const { period } of MA_LIST) {
-      maSeries[period]?.applyOptions({ visible: on.includes(period) });
-    }
+  () => ind.ma,
+  () => {
+    if (maSeries.length) applyMa();
   },
   { deep: true },
 );
