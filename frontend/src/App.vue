@@ -56,6 +56,11 @@ const timeframes = [
             m.period
           }}
         </button>
+
+        <button :class="{ on: ind.bb.on }" @click="ind.toggleBb()">
+          <i :style="{ background: ind.bbColor(theme.theme) }"></i>볼린저 밴드
+          {{ ind.bb.period }}/{{ ind.bb.mult }}
+        </button>
       </div>
 
       <CandleChart coin="btc" :timeframe="timeframe" />

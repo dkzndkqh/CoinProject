@@ -5,11 +5,12 @@ import {
   CandlestickSeries,
   HistogramSeries,
   LineSeries, // 이동평균선용
+  LineStyle, // 중간선을 점선으로 그릴 때 쓴다
 } from "lightweight-charts";
 import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
 import { useIndicatorStore } from "../stores/indicators";
-import { MA_DEFAULTS, sma } from "../utils/indicators";
+import { MA_DEFAULTS, sma, bollinger } from "../utils/indicators";
 
 const props = defineProps({
   coin: { type: String, default: "btc" },
@@ -44,6 +45,7 @@ let candleSeries = null;
 let volumeSeries = null;
 const maSeries = []; // 슬롯 번호(0~4)로 찾는 선 시리즈 배열
 let lastCandles = []; // 가장 최근 캔들. 기간이 바뀌면 이걸로 선을 다시 계산한다.
+let bbSeries = null;
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
@@ -60,6 +62,17 @@ function applyMa() {
       color: ind.maColor(i, theme.theme),
     });
   });
+}
+
+// 볼린저 설정(기간·배수·색·켜짐)을 차트에 반영한다. applyMa와 같은 역할
+function applyBb() {
+  const b = ind.bb;
+  const data = bollinger(lastCandles, b.period, b.mult);
+  const opt = { visible: b.on, color: ind.bbColor(theme.theme) };
+  bbSeries.upper.setData(data.upper);
+  bbSeries.middle.setData(data.middle);
+  bbSeries.lower.setData(data.lower);
+  for (const s of Object.values(bbSeries)) s.applyOptions(opt);
 }
 
 async function load() {
@@ -79,6 +92,7 @@ async function load() {
 
     lastCandles = candles;
     applyMa(); // 이동평균선 5개 계산 + 켜짐·색 적용
+    applyBb();
 
     volumeSeries.setData(
       rows.map((r) => ({
@@ -128,6 +142,21 @@ onMounted(() => {
     });
   }
 
+  const bbBase = {
+    lineWidth: 1,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  };
+  bbSeries = {
+    upper: chart.addSeries(LineSeries, bbBase),
+    middle: chart.addSeries(LineSeries, {
+      ...bbBase,
+      lineStyle: LineStyle.Dashed,
+    }),
+    lower: chart.addSeries(LineSeries, bbBase),
+  };
+
   load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });
 
@@ -140,6 +169,7 @@ watch(
   (mode) => {
     chart?.applyOptions(chartColors(mode));
     if (maSeries.length) applyMa();
+    if (bbSeries) applyBb();
   },
 );
 
@@ -148,6 +178,15 @@ watch(
   () => ind.ma,
   () => {
     if (maSeries.length) applyMa();
+  },
+  { deep: true },
+);
+
+// 볼린저 설정이 바뀌면 다시 반영한다.
+watch(
+  () => ind.bb,
+  () => {
+    if (bbSeries) applyBb();
   },
   { deep: true },
 );
