@@ -25,6 +25,11 @@ export function sma(candles, period) {
   return out;
 }
 
+// 선 설정에서 고를 수 있는 값. 차트 라이브러리가 받는 값 그대로다.
+// 두께(lineWidth): 1~4 / 모양(lineStyle): 0=실선, 1=점선, 2=파선
+export const LINE_WIDTHS = [1, 2, 3, 4];
+export const LINE_STYLES = [0, 1, 2];
+
 // 볼린저밴드 기본값. 업계 표준 20일, 표준편차 2배. 색은 모드별 기본색.
 // 파란 캔들(하락)·MA 색과 안 헷갈리게 청록 계열을 쓴다.
 export const BB_DEFAULT = {

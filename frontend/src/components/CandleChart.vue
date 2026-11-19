@@ -60,6 +60,8 @@ function applyMa() {
     maSeries[i].applyOptions({
       visible: m.on,
       color: ind.maColor(i, theme.theme),
+      lineWidth: m.width,
+      lineStyle: m.style,
     });
   });
 }
@@ -72,7 +74,11 @@ function applyBb() {
   bbSeries.upper.setData(data.upper);
   bbSeries.middle.setData(data.middle);
   bbSeries.lower.setData(data.lower);
-  for (const s of Object.values(bbSeries)) s.applyOptions(opt);
+  // 위·아래 선은 사용자가 고른 두께·모양, 중간선은 색과 켜짐만 따른다(점선 고정)
+  const edge = { ...opt, lineWidth: b.width, lineStyle: b.style };
+  bbSeries.upper.applyOptions(edge);
+  bbSeries.lower.applyOptions(edge);
+  bbSeries.middle.applyOptions(opt);
 }
 
 async function load() {

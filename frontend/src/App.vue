@@ -3,8 +3,10 @@ import { ref } from "vue";
 import CandleChart from "./components/CandleChart.vue";
 import { useThemeStore } from "./stores/theme";
 import { useIndicatorStore } from "./stores/indicators";
+import IndicatorSettings from "./components/IndicatorSettings.vue";
 
 const ind = useIndicatorStore();
+const showSettings = ref(false); // 설정 창을 보일지 여부
 const timeframe = ref("1d");
 const theme = useThemeStore(); // 공유 스토어를 꺼낸다. theme.theme, theme.toggle() 로 쓴다.
 
@@ -41,6 +43,31 @@ const timeframes = [
           >
             {{ theme.theme === "dark" ? "화이트 모드" : "다크 모드" }}
           </button>
+
+          <!-- 지표 설정 창 열기 -->
+          <button
+            class="theme-btn icon-btn"
+            @click="showSettings = true"
+            aria-label="지표 설정"
+            title="지표 설정"
+          >
+            <!-- 톱니바퀴 아이콘(SVG). 색은 글자색(currentColor)을 따라가서 테마가 바뀌어도 맞는다 -->
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -64,6 +91,9 @@ const timeframes = [
       </div>
 
       <CandleChart coin="btc" :timeframe="timeframe" />
+
+      <!-- v-if가 false면 DOM에서 사라진다. @close는 자식의 emit("close")를 받는다 -->
+      <IndicatorSettings v-if="showSettings" @close="showSettings = false" />
     </section>
   </main>
 </template>
@@ -198,5 +228,17 @@ body {
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
+}
+/* 아이콘 버튼. .theme-btn보다 뒤에 둬야 padding·height가 덮어써진다(같은 우선순위는 나중 규칙이 이긴다) */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:hover {
+  color: var(--tab-active-bg);
 }
 </style>
