@@ -11,6 +11,7 @@ import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
 import { useIndicatorStore } from "../stores/indicators";
 import { MA_DEFAULTS, sma, bollinger } from "../utils/indicators";
+import { BandFill } from "../utils/bandFill";
 
 const props = defineProps({
   coin: { type: String, default: "btc" },
@@ -46,6 +47,7 @@ let volumeSeries = null;
 const maSeries = []; // 슬롯 번호(0~4)로 찾는 선 시리즈 배열
 let lastCandles = []; // 가장 최근 캔들. 기간이 바뀌면 이걸로 선을 다시 계산한다.
 let bbSeries = null;
+let bbFill = null; // 볼린저 위·아래 선 사이를 칠하는 플러그인
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
@@ -60,6 +62,8 @@ function applyMa() {
     maSeries[i].applyOptions({
       visible: m.on,
       color: ind.maColor(i, theme.theme),
+      lineWidth: m.width,
+      lineStyle: m.style,
     });
   });
 }
@@ -72,7 +76,24 @@ function applyBb() {
   bbSeries.upper.setData(data.upper);
   bbSeries.middle.setData(data.middle);
   bbSeries.lower.setData(data.lower);
-  for (const s of Object.values(bbSeries)) s.applyOptions(opt);
+  // 백그라운드(위·아래 선 사이 색): 위/아래 값을 시간별로 짝지어 넘기고, 색은 선 색을 따른다
+  bbFill.setData(
+    data.upper.map((u, i) => ({
+      time: u.time,
+      upper: u.value,
+      lower: data.lower[i].value,
+    })),
+  );
+  bbFill.setStyle({
+    color: ind.bbColor(theme.theme),
+    alpha: b.alpha / 100, // 설정은 1~60(%)라 0~1로 바꾼다
+    visible: b.on && b.fill,
+  });
+  // 위·아래 선은 사용자가 고른 두께·모양, 중간선은 색과 켜짐만 따른다(점선 고정)
+  const edge = { ...opt, lineWidth: b.width, lineStyle: b.style };
+  bbSeries.upper.applyOptions(edge);
+  bbSeries.lower.applyOptions(edge);
+  bbSeries.middle.applyOptions(opt);
 }
 
 async function load() {
@@ -156,6 +177,9 @@ onMounted(() => {
     }),
     lower: chart.addSeries(LineSeries, bbBase),
   };
+  // 플러그인을 위 선 시리즈에 붙인다. 이후 차트가 그릴 때마다 알아서 칠해 준다.
+  bbFill = new BandFill();
+  bbSeries.upper.attachPrimitive(bbFill);
 
   load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });

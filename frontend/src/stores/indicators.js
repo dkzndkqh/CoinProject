@@ -1,6 +1,11 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
-import { BB_DEFAULT, MA_DEFAULTS } from "../utils/indicators";
+import {
+  BB_DEFAULT,
+  MA_DEFAULTS,
+  LINE_WIDTHS,
+  LINE_STYLES,
+} from "../utils/indicators";
 
 const KEY = "chartMaSettings";
 const BB_KEY = "chartBbSettings";
@@ -12,6 +17,8 @@ function makeDefaults() {
     period: m.period,
     color: null, // null이면 모드별 기본색(MA_DEFAULTS의 dark/light)을 쓴다
     on: m.period === 20 || m.period === 60,
+    width: 1, // 선 두께 (기본 1)
+    style: 0, // 선 모양 (0=실선)
   }));
 }
 
@@ -26,6 +33,8 @@ function isValid(s) {
         x.period >= 1 &&
         x.period <= 500 &&
         typeof x.on === "boolean" &&
+        LINE_WIDTHS.includes(x.width) &&
+        LINE_STYLES.includes(x.style) &&
         (x.color === null || typeof x.color === "string"),
     )
   );
@@ -47,6 +56,10 @@ function makeBbDefaults() {
     mult: BB_DEFAULT.mult,
     color: null,
     on: true,
+    width: 1,
+    style: 0,
+    fill: true, // 백그라운드(위·아래 선 사이 색) 켜짐
+    alpha: 12, // 백그라운드 투명도(%). 1~60, 클수록 진하다
   };
 }
 // 저장된 볼린저 값이 쓸 만한지 검사 (기간 정수 1~500, 배수 0.1~5)
@@ -61,6 +74,12 @@ function isBbValid(s) {
     s.mult >= 0.1 &&
     s.mult <= 5 &&
     typeof s.on === "boolean" &&
+    LINE_WIDTHS.includes(s.width) &&
+    LINE_STYLES.includes(s.style) &&
+    typeof s.fill === "boolean" &&
+    Number.isInteger(s.alpha) &&
+    s.alpha >= 1 &&
+    s.alpha <= 60 &&
     (s.color === null || typeof s.color === "string")
   );
 }
