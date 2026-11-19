@@ -259,6 +259,28 @@ function resetCurrent() {
             </div>
           </div>
         </div>
+        <div class="frow">
+          <label>백그라운드<small>위·아래 선 사이 색</small></label>
+          <label class="sw">
+            <input type="checkbox" v-model="ind.bb.fill" />
+            <i></i>
+          </label>
+        </div>
+        <div class="frow">
+          <label>투명도<small>클수록 진하게</small></label>
+          <!-- 슬라이더는 브라우저가 min~max 안의 정수만 주므로 따로 검증하지 않는다.
+               v-model.number: 입력 문자열을 숫자로 바꿔서 스토어에 넣는다 -->
+          <div class="slider" :class="{ off: !ind.bb.fill }">
+            <input
+              type="range"
+              min="1"
+              max="60"
+              :disabled="!ind.bb.fill"
+              v-model.number="ind.bb.alpha"
+            />
+            <output>{{ ind.bb.alpha }}%</output>
+          </div>
+        </div>
       </div>
 
       <p class="foot">
@@ -597,7 +619,28 @@ function resetCurrent() {
 }
 .anchor {
   position: relative;
-}.anchor .pop {
+}
+
+/* 투명도 슬라이더 */
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--tab-active-bg);
+}
+.slider output {
+  width: 40px;
+  text-align: right;
+  font-size: 13px;
+}
+.slider.off {
+  opacity: 0.4;
+}
+.anchor .pop {
   right: auto;
   left: 0;
   top: 38px;

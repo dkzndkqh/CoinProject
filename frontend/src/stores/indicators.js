@@ -58,6 +58,8 @@ function makeBbDefaults() {
     on: true,
     width: 1,
     style: 0,
+    fill: true, // 백그라운드(위·아래 선 사이 색) 켜짐
+    alpha: 12, // 백그라운드 투명도(%). 1~60, 클수록 진하다
   };
 }
 // 저장된 볼린저 값이 쓸 만한지 검사 (기간 정수 1~500, 배수 0.1~5)
@@ -74,6 +76,10 @@ function isBbValid(s) {
     typeof s.on === "boolean" &&
     LINE_WIDTHS.includes(s.width) &&
     LINE_STYLES.includes(s.style) &&
+    typeof s.fill === "boolean" &&
+    Number.isInteger(s.alpha) &&
+    s.alpha >= 1 &&
+    s.alpha <= 60 &&
     (s.color === null || typeof s.color === "string")
   );
 }
