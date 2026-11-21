@@ -8,7 +8,7 @@ const ind = useIndicatorStore();
 const theme = useThemeStore();
 const emit = defineEmits(["close"]);
 
-const tab = ref("ma"); // 현재 탭: "ma" | "bb"
+const tab = ref("ma"); // 현재 탭: "ma" | "bb" | "ichi"
 const openKey = ref(null); // 선 두께·모양 팝업이 열린 줄: 0~4(이동평균 슬롯) | "bb" | null
 
 // 선 모양 숫자(0,1,2) -> CSS border 모양 이름. 인덱스가 곧 차트의 lineStyle 값이다.
@@ -39,11 +39,24 @@ function setMult(e) {
   }
 }
 
+// 일목 기간 검증: 정수 1~500. key는 "tenkan" | "kijun" | "senkouB".
+// 통과한 값만 스토어에 넣고, 틀리면 입력창을 원래 값으로 되돌린다. (setPeriod와 같은 방식)
+// ind.ichi[key]는 자바의 map.get(key)처럼 이름으로 필드를 고르는 문법이다.
+function setIchi(key, e) {
+  const n = Number(e.target.value);
+  if (Number.isInteger(n) && n >= 1 && n <= 500) {
+    ind.ichi[key] = n;
+  } else {
+    e.target.value = ind.ichi[key];
+  }
+}
+
 // 현재 탭의 초기화 버튼. 탭마다 자기 설정만 되돌린다.
 function resetCurrent() {
   openKey.value = null;
   if (tab.value === "ma") ind.resetMa();
-  else ind.resetBb();
+  else if (tab.value === "bb") ind.resetBb();
+  else ind.resetIchi();
 }
 </script>
 
@@ -64,13 +77,22 @@ function resetCurrent() {
         <button :class="{ active: tab === 'bb' }" @click="tab = 'bb'">
           볼린저 밴드
         </button>
+        <button :class="{ active: tab === 'ichi' }" @click="tab = 'ichi'">
+          일목 구름
+        </button>
       </div>
 
       <div class="sect">
         <p v-if="tab === 'ma'">
           차트에 그릴 이동평균선을 켜고, 길이와 모양을 정하세요.
         </p>
-        <p v-else>가격이 움직이는 범위를 보여 주는 위·중간·아래 3개 선입니다.</p>
+        <p v-else-if="tab === 'bb'">
+          가격이 움직이는 범위를 보여 주는 위·중간·아래 3개 선입니다.
+        </p>
+        <p v-else>
+          전환선·기준선과 구름으로 추세를 보는 지표입니다. 구름은 마지막 캔들
+          앞쪽으로 나갑니다.
+        </p>
         <button class="reset" @click.stop="resetCurrent">
           <span>↺</span>기본값으로 초기화
         </button>
@@ -160,7 +182,7 @@ function resetCurrent() {
       </div>
 
       <!-- 볼린저 탭: 줄이 하나라서 세로 폼 -->
-      <div class="card" v-else>
+      <div class="card" v-else-if="tab === 'bb'">
         <div class="frow">
           <label>표시</label>
           <label class="sw">
@@ -283,9 +305,60 @@ function resetCurrent() {
         </div>
       </div>
 
+      <!-- 일목 탭: 켜기 + 기간 3개. 색은 고정이라 고르는 칸이 없다 -->
+      <div class="card" v-else>
+        <div class="frow">
+          <label>표시</label>
+          <label class="sw">
+            <input type="checkbox" v-model="ind.ichi.on" />
+            <i></i>
+          </label>
+        </div>
+        <div class="frow">
+          <label>전환선<small>짧은 추세선</small></label>
+          <div class="num">
+            <input
+              type="number"
+              min="1"
+              max="500"
+              :value="ind.ichi.tenkan"
+              @change="setIchi('tenkan', $event)"
+            />
+            <span>봉</span>
+          </div>
+        </div>
+        <div class="frow">
+          <label>기준선<small>구름을 앞으로 미는 칸 수도 이 값</small></label>
+          <div class="num">
+            <input
+              type="number"
+              min="1"
+              max="500"
+              :value="ind.ichi.kijun"
+              @change="setIchi('kijun', $event)"
+            />
+            <span>봉</span>
+          </div>
+        </div>
+        <div class="frow">
+          <label>선행스팬2<small>구름의 한쪽 끝</small></label>
+          <div class="num">
+            <input
+              type="number"
+              min="1"
+              max="500"
+              :value="ind.ichi.senkouB"
+              @change="setIchi('senkouB', $event)"
+            />
+            <span>봉</span>
+          </div>
+        </div>
+      </div>
+
       <p class="foot">
         여기서 바꾼 값은 차트 선에만 적용됩니다. 매수·매도 판정은 표준값(이동평균
-        5/20/60/120/200, 볼린저 20/2) 기준입니다.
+        5/20/60/120/200, 볼린저 20/2, 일목 9/26/52) 기준입니다. 일목의 선 색은
+        고정입니다.
       </p>
     </div>
   </div>

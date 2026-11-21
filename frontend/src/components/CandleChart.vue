@@ -10,7 +10,7 @@ import {
 import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
 import { useIndicatorStore } from "../stores/indicators";
-import { MA_DEFAULTS, sma, bollinger } from "../utils/indicators";
+import { MA_DEFAULTS, sma, bollinger, ichimoku, TF_SEC } from "../utils/indicators";
 import { BandFill } from "../utils/bandFill";
 
 const props = defineProps({
@@ -48,6 +48,8 @@ const maSeries = []; // 슬롯 번호(0~4)로 찾는 선 시리즈 배열
 let lastCandles = []; // 가장 최근 캔들. 기간이 바뀌면 이걸로 선을 다시 계산한다.
 let bbSeries = null;
 let bbFill = null; // 볼린저 위·아래 선 사이를 칠하는 플러그인
+let ichiSeries = null; // { tenkan, kijun, spanA, spanB } 선 4개
+let ichiFill = null; // 구름을 칠하는 플러그인
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
@@ -96,6 +98,21 @@ function applyBb() {
   bbSeries.middle.applyOptions(opt);
 }
 
+function applyIchi() {
+  const s = ind.ichi;
+  const d = ichimoku(lastCandles, s, TF_SEC[props.timeframe]);
+  ichiSeries.tenkan.setData(d.tenkan);
+    ichiSeries.kijun.setData(d.kijun);
+    ichiSeries.spanA.setData(d.spanA);
+    ichiSeries.spanB.setData(d.spanB);
+    ichiFill.setData(d.cloud);
+    // 구름 색은 점마다 들어 있어서(color) 여기 color는 예비값이다
+    ichiFill.setStyle({ color: "#ef5350", alpha: 0.15, visible: s.on });
+    for (const line of Object.values(ichiSeries)) {
+      line.applyOptions({ visible: s.on })
+    }
+}
+
 async function load() {
   error.value = "";
   try {
@@ -114,6 +131,7 @@ async function load() {
     lastCandles = candles;
     applyMa(); // 이동평균선 5개 계산 + 켜짐·색 적용
     applyBb();
+    applyIchi();
 
     volumeSeries.setData(
       rows.map((r) => ({
@@ -181,6 +199,28 @@ onMounted(() => {
   bbFill = new BandFill();
   bbSeries.upper.attachPrimitive(bbFill);
 
+  // 일목 선 4개. 색은 고정(전환선 주황, 기준선 갈색, 스팬1 빨강, 스팬2 파랑)
+  const ichiBase = {
+    lineWidth: 1,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  };
+  ichiSeries = {
+    tenkan: chart.addSeries(LineSeries, { ...ichiBase, color: "#f57c00" }),
+    kijun: chart.addSeries(LineSeries, { ...ichiBase, color: "#8d6e63" }),
+    spanA: chart.addSeries(LineSeries, {
+      ...ichiBase,
+      color: "rgba(239,83,80,0.6)",
+    }),
+    spanB: chart.addSeries(LineSeries, {
+      ...ichiBase,
+      color: "rgba(66,133,244,0.6)",
+    }),
+  };
+  ichiFill = new BandFill();
+  ichiSeries.spanA.attachPrimitive(ichiFill); // 구름은 스팬1 시리즈에 붙인다
+
   load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });
 
@@ -211,6 +251,15 @@ watch(
   () => ind.bb,
   () => {
     if (bbSeries) applyBb();
+  },
+  { deep: true },
+);
+
+// 일목 설정이 바뀌면 다시 반영한다.
+watch(
+  () => ind.ichi,
+  () => {
+    if (ichiSeries) applyIchi();
   },
   { deep: true },
 );

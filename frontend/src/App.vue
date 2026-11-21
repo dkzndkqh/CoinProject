@@ -88,6 +88,11 @@ const timeframes = [
           <i :style="{ background: ind.bbColor(theme.theme) }"></i>볼린저 밴드
           {{ ind.bb.period }}/{{ ind.bb.mult }}
         </button>
+
+        <button :class="{ on: ind.ichi.on }" @click="ind.toggleIchi()">
+          <i style="background: #ef5350"></i>일목 구름
+          {{ ind.ichi.tenkan }}/{{ ind.ichi.kijun }}/{{ ind.ichi.senkouB }}
+        </button>
       </div>
 
       <CandleChart coin="btc" :timeframe="timeframe" />

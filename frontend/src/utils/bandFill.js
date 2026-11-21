@@ -65,6 +65,7 @@ export class BandFill {
         x: ts.timeToCoordinate(d.time),
         upper: this._series.priceToCoordinate(d.upper),
         lower: this._series.priceToCoordinate(d.lower),
+        color: d.color,
       }))
       // 화면 밖이라 좌표가 null인 점은 뺀다
       .filter((p) => p.x !== null && p.upper !== null && p.lower !== null);
@@ -79,15 +80,28 @@ export class BandFill {
     // media 좌표계: 화면 배율(dpr)에 상관없이 CSS 픽셀 단위로 그린다
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       const pts = this._points;
-      ctx.beginPath();
-      // 위 선을 왼쪽에서 오른쪽으로, 아래 선을 오른쪽에서 왼쪽으로 이어서 닫힌 띠 모양을 만든다
-      ctx.moveTo(pts[0].x, pts[0].upper);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].upper);
-      for (let i = pts.length - 1; i >= 0; i--)
-        ctx.lineTo(pts[i].x, pts[i].lower);
-      ctx.closePath();
-      ctx.fillStyle = hexToRgba(this._color, this._alpha);
-      ctx.fill();
+      // 색이 같은 연속 구간(start~end)을 한 덩어리로 칠한다.
+      // 색이 바뀌는 곳에서는 경계점까지 포함해서 구간 사이에 틈이 안 생기게 한다.
+      // 볼린저처럼 color가 전부 undefined면 구간이 하나라서 예전과 똑같이 그려진다.
+      let start = 0;
+      for (let i = 1; i <= pts.length; i++) {
+        if (i < pts.length && pts[i].color === pts[start].color) continue;
+        const end = Math.min(i, pts.length - 1);
+        if (end > start) {
+          ctx.beginPath();
+          ctx.moveTo(pts[start].x, pts[start].upper);
+          for (let j = start + 1; j <= end; j++)
+            ctx.lineTo(pts[j].x, pts[j].upper);
+          for (let j = end; j >= start; j--) ctx.lineTo(pts[j].x, pts[j].lower);
+          ctx.closePath();
+          ctx.fillStyle = hexToRgba(
+            pts[start].color ?? this._color,
+            this._alpha,
+          );
+          ctx.fill();
+        }
+        start = i;
+      }
     });
   }
 }

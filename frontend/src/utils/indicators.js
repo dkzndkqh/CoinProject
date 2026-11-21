@@ -59,3 +59,59 @@ export function bollinger(candles, period, mult) {
   }
   return { upper, middle, lower };
 }
+
+// 일목균형표 기본 기간(표준값 9/26/52). tenkan=전환선, kijun=기준선(선행스팬 이동 칸 수도 이것), senkouB=선행스팬2
+export const ICHI_DEFAULT = { tenkan: 9, kijun: 26, senkouB: 52 };
+
+// 봉 하나의 길이(초). 마지막 캔들 뒤 "미래 구름"의 시각을 만들 때 쓴다.
+export const TF_SEC = { "1h": 3600, "4h": 14400, "1d": 86400 };
+
+// i번째 캔들까지 최근 n개의 (최고가 + 최저가) / 2. 데이터가 모자라면 null.
+function midline(candles, i, n) {
+  if (i < n - 1) return null;
+  let hi = -Infinity;
+  let lo = Infinity;
+  for (let k = i - n + 1; k <= i; k++) {
+    hi = Math.max(hi, candles[k].high);
+    lo = Math.min(lo, candles[k].low);
+  }
+  return (hi + lo) / 2;
+}
+
+// 일목균형표 계산. candles: 오래된 순, p: { tenkan, kijun, senkouB }, stepSec: 봉 길이(초)
+// 결과: 각 선 [{ time, value }]과 구름 [{ time, upper, lower, color }]
+export function ichimoku(candles, p, stepSec) {
+  const n = candles.length;
+  const tenkan = [];
+  const kijun = [];
+  const spanA = [];
+  const spanB = [];
+  // j번째 칸의 시각. 마지막 캔들을 넘어가면 봉 길이를 더해서 미래 시각을 만든다.
+  const timeAt = (j) =>
+    j < n ? candles[j].time : candles[n - 1].time + (j - (n - 1)) * stepSec;
+
+  for (let i = 0; i < n; i++) {
+    const t = midline(candles, i, p.tenkan); // 전환선
+    const k = midline(candles, i, p.kijun); // 기준선
+    const b = midline(candles, i, p.senkouB); // 선행스팬2 원값
+    if (t !== null) tenkan.push({ time: candles[i].time, value: t });
+    if (k !== null) kijun.push({ time: candles[i].time, value: k });
+    // 선행스팬은 계산한 값을 kijun칸 "앞" 시각에 찍는다 (이게 구름이 미래로 나가는 이유)
+    const time = timeAt(i + p.kijun);
+    if (t !== null && k !== null) spanA.push({ time, value: (t + k) / 2 });
+    if (b !== null) spanB.push({ time, value: b });
+  }
+
+  // 두 스팬을 시각으로 짝지어 구름을 만든다. 빨강=1이 위(상승), 파랑=2가 위(하락).
+  const bByTime = new Map(spanB.map((x) => [x.time, x.value]));
+  const cloud = spanA
+    .filter((a) => bByTime.has(a.time))
+    .map((a) => ({
+      time: a.time,
+      upper: a.value,
+      lower: bByTime.get(a.time),
+      color: a.value >= bByTime.get(a.time) ? "#ef5350" : "#4285f4",
+    }));
+
+  return { tenkan, kijun, spanA, spanB, cloud };
+}
