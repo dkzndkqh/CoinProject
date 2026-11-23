@@ -31,7 +31,12 @@ const palettes = {
 function chartColors(mode) {
   const p = palettes[mode];
   return {
-    layout: { background: { color: p.bg }, textColor: p.text },
+    layout: {
+      background: { color: p.bg },
+      textColor: p.text,
+      // 차트 축 글자도 가격·본문과 같은 글꼴로 맞춘다(라이브러리 기본은 Trebuchet MS)
+      fontFamily: '-apple-system, "Segoe UI", "Noto Sans KR", sans-serif',
+    },
     grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
     rightPriceScale: { borderColor: p.border },
     timeScale: { borderColor: p.border },
