@@ -1,6 +1,8 @@
 <script setup>
-import { ref } from "vue";
+import { ref, computed, onMounted } from "vue";
 import CandleChart from "./components/CandleChart.vue";
+import { fetchCandles } from "./api/market";
+import { makeQuote } from "./utils/quote";
 import { useThemeStore } from "./stores/theme";
 import { useIndicatorStore } from "./stores/indicators";
 import IndicatorSettings from "./components/IndicatorSettings.vue";
@@ -8,6 +10,45 @@ import IndicatorSettings from "./components/IndicatorSettings.vue";
 const ind = useIndicatorStore();
 const showSettings = ref(false); // 설정 창을 보일지 여부
 const timeframe = ref("1d");
+// 선택된 코인. 값은 백엔드 URL에 들어가는 소문자('btc'|'eth')
+const coin = ref("btc");
+// 코인 목록. name은 한글 이름, market은 업비트 식 표기, glyph·color는 동그란 아이콘용
+const coins = [
+  { value: "btc", name: "비트코인", market: "BTC/KRW", glyph: "₿", color: "#f7931a" },
+  { value: "eth", name: "이더리움", market: "ETH/KRW", glyph: "Ξ", color: "#627eea" },
+];
+// 현재 선택된 코인 객체를 찾는다. coin이 바뀌면 자동으로 다시 계산된다.
+// (자바로 치면 list.stream().filter(...).findFirst() 결과를 필드처럼 쓰는 것과 같다)
+const currentCoin = computed(() => coins.find((c) => c.value === coin.value));
+
+// ── 코인별 시세 (현재가, 전일 대비) ──
+const quotes = ref({}); // { btc: {cls, price, pct, amount}, eth: {...} }
+const showCoinMenu = ref(false); // 코인 목록이 펼쳐졌는지
+
+// 두 코인의 일봉 2개씩을 받아 시세를 계산한다. 한 코인이 실패해도 다른 코인은 보여 준다.
+async function loadQuotes() {
+  const entries = await Promise.all(
+    coins.map(async (c) => {
+      try {
+        return [c.value, makeQuote(await fetchCandles(c.value, "1d", 2))];
+      } catch (e) {
+        return [c.value, null];
+      }
+    }),
+  );
+  quotes.value = Object.fromEntries(entries);
+}
+onMounted(loadQuotes);
+
+// 목록을 펼칠 때마다 시세를 다시 받아서 최신 값을 보여 준다.
+function toggleCoinMenu() {
+  showCoinMenu.value = !showCoinMenu.value;
+  if (showCoinMenu.value) loadQuotes();
+}
+function selectCoin(value) {
+  coin.value = value;
+  showCoinMenu.value = false;
+}
 const theme = useThemeStore(); // 공유 스토어를 꺼낸다. theme.theme, theme.toggle() 로 쓴다.
 
 const timeframes = [
@@ -21,7 +62,73 @@ const timeframes = [
   <main class="page">
     <section class="panel">
       <header class="bar">
-        <h1 class="title">BTC <span>비트코인</span></h1>
+        <div>
+          <div class="coin-wrap">
+            <!-- 코인 선택 버튼. 눌러야 하는 버튼이라는 걸 테두리와 화살표 칸으로 알린다 -->
+            <button
+              class="coin-pick"
+              :aria-expanded="showCoinMenu"
+              @click="toggleCoinMenu"
+            >
+              <span class="coin-dot" :style="{ background: currentCoin.color }">{{
+                currentCoin.glyph
+              }}</span>
+              <span class="coin-name">{{ currentCoin.name }}</span>
+              <span class="coin-market">{{ currentCoin.market }}</span>
+              <span class="coin-chev">▼</span>
+            </button>
+
+            <!-- 목록 밖을 누르면 닫히게 하는 투명 막. 메뉴(z-index 5)보다 아래(4)에 깐다 -->
+            <div
+              v-if="showCoinMenu"
+              class="backdrop"
+              @click="showCoinMenu = false"
+            ></div>
+
+            <div v-if="showCoinMenu" class="coin-menu">
+              <div class="menu-head">코인 선택</div>
+              <button
+                v-for="c in coins"
+                :key="c.value"
+                class="menu-item"
+                :class="{ on: coin === c.value }"
+                @click="selectCoin(c.value)"
+              >
+                <span class="check">{{ coin === c.value ? "✓" : "" }}</span>
+                <span class="coin-dot" :style="{ background: c.color }">{{
+                  c.glyph
+                }}</span>
+                <span class="menu-name">
+                  <b>{{ c.name }}</b>
+                  <small>{{ c.market }}</small>
+                </span>
+                <!-- 시세가 있으면 코인마다 자기 색(cls)으로 칠한다 -->
+                <span
+                  v-if="quotes[c.value]"
+                  class="menu-price"
+                  :class="quotes[c.value].cls"
+                >
+                  <b>{{ quotes[c.value].price }}</b>
+                  <span class="menu-chg">
+                    <span>{{ quotes[c.value].pct }}</span>
+                    <span>{{ quotes[c.value].amount }}</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 업비트 방식 시세: 큰 현재가, 그 아래 '퍼센트 ▲ 금액'. 현재가도 같은 색 -->
+          <div v-if="quotes[coin]" class="quote" :class="quotes[coin].cls">
+            <div class="big">
+              {{ quotes[coin].price }}<small>KRW</small>
+            </div>
+            <div class="chg">
+              <span>{{ quotes[coin].pct }}</span>
+              <span>{{ quotes[coin].amount }}</span>
+            </div>
+          </div>
+        </div>
 
         <div class="right">
           <div class="tabs">
@@ -95,7 +202,7 @@ const timeframes = [
         </button>
       </div>
 
-      <CandleChart coin="btc" :timeframe="timeframe" />
+      <CandleChart :coin="coin" :timeframe="timeframe" />
 
       <!-- v-if가 false면 DOM에서 사라진다. @close는 자식의 emit("close")를 받는다 -->
       <IndicatorSettings v-if="showSettings" @close="showSettings = false" />
@@ -115,6 +222,8 @@ const timeframes = [
   --track: #eef0f4;
   --tab-active-bg: #2563eb; /* 선택된 탭: 두 모드 공통 파란색 */
   --tab-active-text: #ffffff;
+  --up: #d24f45; /* 상승·보합 빨강. 화이트 모드는 흰 배경에서 읽히게 조금 진하게 */
+  --down: #1261c4; /* 하락 파랑 */
 }
 :root[data-theme="dark"] {
   --bg: #0e1117;
@@ -123,6 +232,8 @@ const timeframes = [
   --text: #e6e8ec;
   --muted: #8b93a1;
   --track: #0e1117;
+  --up: #ef5350;
+  --down: #4285f4;
 }
 
 body {
@@ -131,6 +242,14 @@ body {
   color: var(--text);
   font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
   display: block;
+}
+
+/* 버튼·입력칸은 기본으로 글꼴을 안 물려받아서(브라우저 기본 Arial) 본문 글꼴을 따르게 한다 */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 </style>
 
@@ -148,24 +267,176 @@ body {
 }
 .bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* 왼쪽(코인+시세)이 두 줄이라 오른쪽 버튼들을 위에 맞춘다 */
   justify-content: space-between;
+  flex-wrap: wrap; /* 좁은 화면에서 제목과 버튼들이 줄바꿈되게 */
+  gap: 8px;
   margin-bottom: 12px;
 }
-.title {
-  margin: 0;
-  font-size: 18px;
+/* ── 코인 선택 버튼과 목록 ── */
+.coin-wrap {
+  position: relative; /* 목록을 버튼 바로 아래에 띄우는 기준 */
+}
+.coin-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.coin-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex: 0 0 auto;
+}
+.coin-name {
+  font-size: 17px;
   font-weight: 700;
 }
-.title span {
-  margin-left: 6px;
-  font-size: 13px;
-  font-weight: 400;
+.coin-market {
+  font-size: 12px;
   color: var(--muted);
+}
+.coin-chev {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: var(--track);
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+/* 마우스를 올리거나 펼쳤을 때: 테두리가 진해지고 화살표 칸이 반전된다 */
+.coin-pick:hover,
+.coin-pick[aria-expanded="true"] {
+  border-color: var(--text);
+}
+.coin-pick:hover .coin-chev,
+.coin-pick[aria-expanded="true"] .coin-chev {
+  background: var(--text);
+  color: var(--panel);
+}
+.coin-pick[aria-expanded="true"] .coin-chev {
+  transform: rotate(180deg);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+}
+.coin-menu {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.menu-head {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item + .menu-item {
+  border-top: 1px solid var(--border);
+}
+.menu-item:hover,
+.menu-item.on {
+  background: var(--track);
+}
+.check {
+  width: 14px;
+  font-weight: 700;
+}
+.menu-name {
+  display: flex;
+  flex-direction: column;
+}
+.menu-name small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.menu-price {
+  margin-left: auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.menu-chg {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  font-size: 12px;
+}
+
+/* ── 업비트 방식 시세 ── */
+.quote {
+  margin-top: 8px;
+}
+.big {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.big small {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.chg {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* 시세 영역과 목록이 같이 쓰는 색 규칙: 상승·보합 빨강, 하락 파랑 */
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
 }
 .right {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
