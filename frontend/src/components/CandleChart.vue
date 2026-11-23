@@ -51,6 +51,12 @@ let bbFill = null; // 볼린저 위·아래 선 사이를 칠하는 플러그인
 let ichiSeries = null; // { tenkan, kijun, spanA, spanB } 선 4개
 let ichiFill = null; // 구름을 칠하는 플러그인
 
+// ── 과거 이어받기용 상태 ──
+let allRows = []; // 지금까지 받은 원본 행 전체(오래된 순). 자바의 List<Row> 필드와 같다.
+let loadingMore = false; // 이어받는 중이면 true. 같은 요청이 겹쳐 나가는 걸 막는 잠금
+let noMore = false; // 서버에 더 옛날 캔들이 없으면 true. 더 요청하지 않는다
+let seq = 0; // load()를 부를 때마다 1씩 올리는 번호. 코인·봉이 바뀐 뒤 늦게 도착한 옛 응답을 버리는 데 쓴다
+
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
   return Math.floor(Date.parse(s) / 1000);
@@ -113,37 +119,84 @@ function applyIchi() {
     }
 }
 
+// 받아 둔 행(rows)을 차트와 지표선에 반영한다. load와 loadMore가 같이 쓴다.
+function draw(rows) {
+  // 차트 형식으로 변환한다(Java의 stream().map()과 같다)
+  const candles = rows.map((r) => ({
+    time: toSec(r.candle_time),
+    open: r.open,
+    high: r.high,
+    low: r.low,
+    close: r.close,
+  }));
+  candleSeries.setData(candles);
+
+  lastCandles = candles;
+  applyMa(); // 이동평균선 5개 계산 + 켜짐·색 적용
+  applyBb();
+  applyIchi();
+
+  volumeSeries.setData(
+    rows.map((r) => ({
+      time: toSec(r.candle_time),
+      value: r.volume,
+      color: r.close >= r.open ? "rgba(239,83,80,0.5)" : "rgba(66,133,244,0.5)",
+    })),
+  );
+}
+
+// 처음 로딩(코인·봉이 바뀔 때도 호출). 최근 300개로 처음부터 다시 시작한다.
 async function load() {
   error.value = "";
+  const mySeq = ++seq; // 이 호출의 번호표
+  noMore = false;
+  loadingMore = false;
   try {
     const rows = await fetchCandles(props.coin, props.timeframe, 300);
-
-    // 차트 형식으로 한 번만 변환해 두고, 캔들과 이동평균 계산에 같이 쓴다.
-    const candles = rows.map((r) => ({
-      time: toSec(r.candle_time),
-      open: r.open,
-      high: r.high,
-      low: r.low,
-      close: r.close,
-    }));
-    candleSeries.setData(candles);
-
-    lastCandles = candles;
-    applyMa(); // 이동평균선 5개 계산 + 켜짐·색 적용
-    applyBb();
-    applyIchi();
-
-    volumeSeries.setData(
-      rows.map((r) => ({
-        time: toSec(r.candle_time),
-        value: r.volume,
-        color:
-          r.close >= r.open ? "rgba(239,83,80,0.5)" : "rgba(66,133,244,0.5)",
-      })),
-    );
+    if (mySeq !== seq) return; // 기다리는 사이 코인·봉이 또 바뀌었으면 이 응답은 버린다
+    allRows = rows;
+    draw(allRows);
     chart.timeScale().fitContent();
   } catch (e) {
     error.value = "차트 데이터를 불러오지 못했습니다.";
+  }
+}
+
+// 왼쪽 끝에 가까워졌을 때 더 옛날 캔들 300개를 받아 앞에 붙인다.
+async function loadMore() {
+  if (loadingMore || noMore || allRows.length === 0) return; // 받는 중이거나 더 없으면 무시
+  loadingMore = true;
+  const mySeq = seq;
+  try {
+    const oldestIso = allRows[0].candle_time; // 지금 가진 가장 오래된 캔들의 시각
+    // end_time은 "이하"라서 응답 맨 끝에 oldest 캔들이 한 번 더 온다
+    const rows = await fetchCandles(props.coin, props.timeframe, 300, oldestIso);
+    if (mySeq !== seq) return;
+
+    // 겹치는 캔들 거르기: oldest보다 "확실히 옛날"인 것만 남긴다
+    const oldestSec = toSec(oldestIso);
+    const older = rows.filter((r) => toSec(r.candle_time) < oldestSec);
+    if (older.length === 0) {
+      noMore = true; // 더 받을 게 없다 = 가장 오래된 데이터까지 왔다
+      return;
+    }
+
+    // 붙이기 전에 지금 보고 있는 구간을 기억해 둔다
+    const range = chart.timeScale().getVisibleLogicalRange();
+    allRows = [...older, ...allRows]; // 앞에 이어 붙인다(Java의 addAll(0, list)와 같다)
+    draw(allRows);
+    // 차트 구간은 "몇 번째 캔들"이라는 번호라서, 앞에 older.length개가 들어오면 밀린다.
+    // 같은 만큼 밀어 줘야 화면이 튀지 않는다.
+    if (range) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: range.from + older.length,
+        to: range.to + older.length,
+      });
+    }
+  } catch (e) {
+    error.value = "과거 캔들을 불러오지 못했습니다.";
+  } finally {
+    if (mySeq === seq) loadingMore = false; // 잠금 해제(Java의 finally와 같다)
   }
 }
 
@@ -220,6 +273,12 @@ onMounted(() => {
   };
   ichiFill = new BandFill();
   ichiSeries.spanA.attachPrimitive(ichiFill); // 구름은 스팬1 시리즈에 붙인다
+
+  // 보이는 구간이 바뀔 때마다 호출된다. from은 화면 왼쪽 끝의 캔들 번호이고,
+  // 0이면 가진 데이터의 맨 처음이다. 20개 이내로 다가오면 미리 더 받는다.
+  chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (range && range.from < 20) loadMore();
+  });
 
   load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });
