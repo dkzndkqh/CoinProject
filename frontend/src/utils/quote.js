@@ -1,18 +1,15 @@
-// 일봉 2개(오래된 순)로 시세를 계산한다. 헤더와 코인 목록이 같이 쓴다.
-// rows: fetchCandles(coin, '1d', 2)의 결과. 마지막이 오늘(진행 중), 그 앞이 전일.
-// 서버가 못 주거나 캔들이 1개뿐이면 null (화면에서는 가격을 비워 둔다).
-export function makeQuote(rows) {
-  if (!rows || rows.length < 2) return null;
-
-  const price = rows[rows.length - 1].close; // 현재가 = 최신 캔들 종가 (최대 15분 지연)
-  const prev = rows[rows.length - 2].close; // 전일 종가
-  const diff = price - prev; // 전일 대비 변동 금액
-  const pct = prev ? (diff / prev) * 100 : 0; // 전일 대비 변동률(%)
+// 업비트 웹소켓 ticker 메시지 하나로 화면에 보여 줄 시세를 만든다.
+// 헤더와 코인 목록이 같이 쓴다. 전일 대비 값은 업비트가 계산해서 주므로 우리가 계산하지 않는다.
+// t.trade_price: 현재가 / t.signed_change_price: 전일 대비 금액(부호 포함)
+// t.signed_change_rate: 전일 대비 비율(부호 포함, 0.0125 = 1.25%)
+export function makeQuote(t) {
+  const diff = t.signed_change_price;
+  const pct = t.signed_change_rate * 100;
 
   return {
     // 색 규칙: 오르거나 같으면 up(빨강), 떨어지면 down(파랑)
     cls: diff >= 0 ? "up" : "down",
-    price: won(price),
+    price: won(t.trade_price),
     // 퍼센트는 오르면 +를 붙이고, 내리면 -는 숫자가 이미 갖고 있다. 0이면 부호 없음.
     pct: (pct > 0 ? "+" : "") + pct.toFixed(2) + "%",
     // 금액은 업비트처럼 오르면 ▲ 금액, 내리면 ▼ -금액, 같으면 0
