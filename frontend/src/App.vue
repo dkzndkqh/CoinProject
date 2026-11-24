@@ -23,6 +23,7 @@ const currentCoin = computed(() => coins.find((c) => c.value === coin.value));
 
 // ── 코인별 시세 (현재가, 전일 대비) ──
 const quotes = ref({}); // { btc: {cls, price, pct, amount}, eth: {...} }
+const ticks = ref({}); // 코인별 최신 ticker 원본 메시지. 차트가 가격·거래량 갱신에 쓴다
 const showCoinMenu = ref(false); // 코인 목록이 펼쳐졌는지
 
 // 웹소켓 연결 종료 함수. 화면이 사라질 때 호출한다.
@@ -34,6 +35,7 @@ onMounted(() => {
   stopTicker = connectTicker((t) => {
     const key = t.code.replace("KRW-", "").toLowerCase();
     quotes.value[key] = makeQuote(t);
+    ticks.value[key] = t; // 차트용 원본
   });
 });
 
@@ -202,7 +204,7 @@ const timeframes = [
         </button>
       </div>
 
-      <CandleChart :coin="coin" :timeframe="timeframe" />
+      <CandleChart :coin="coin" :timeframe="timeframe" :tick="ticks[coin]" />
 
       <!-- v-if가 false면 DOM에서 사라진다. @close는 자식의 emit("close")를 받는다 -->
       <IndicatorSettings v-if="showSettings" @close="showSettings = false" />

@@ -6,6 +6,7 @@ import {
   HistogramSeries,
   LineSeries, // 이동평균선용
   LineStyle, // 중간선을 점선으로 그릴 때 쓴다
+  CrosshairMode, // 십자선 모드(자석/일반)
 } from "lightweight-charts";
 import { fetchCandles } from "../api/market";
 import { useThemeStore } from "../stores/theme";
@@ -16,6 +17,7 @@ import { BandFill } from "../utils/bandFill";
 const props = defineProps({
   coin: { type: String, default: "btc" },
   timeframe: { type: String, default: "1d" },
+  tick: { type: Object, default: null }, // 이 코인의 최신 ticker 메시지(실시간 갱신용)
 });
 
 const theme = useThemeStore();
@@ -61,6 +63,11 @@ let allRows = []; // 지금까지 받은 원본 행 전체(오래된 순). 자�
 let loadingMore = false; // 이어받는 중이면 true. 같은 요청이 겹쳐 나가는 걸 막는 잠금
 let noMore = false; // 서버에 더 옛날 캔들이 없으면 true. 더 요청하지 않는다
 let seq = 0; // load()를 부를 때마다 1씩 올리는 번호. 코인·봉이 바뀐 뒤 늦게 도착한 옛 응답을 버리는 데 쓴다
+
+// ── 실시간 갱신용 상태 ──
+let liveReady = false; // load()가 끝나 처음 그림이 완성된 뒤에만 true. 그 전의 ticker는 무시한다
+let volBase = 0; // 마지막 봉이 웹소켓 누적을 시작하기 전에 이미 가지고 있던 거래량
+let accBase = null; // 그 시점의 당일 누적 거래량(acc_trade_volume). 이후 늘어난 만큼을 더한다
 
 function toSec(iso) {
   const s = /Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z";
@@ -153,6 +160,7 @@ function draw(rows) {
 // 처음 로딩(코인·봉이 바뀔 때도 호출). 최근 300개로 처음부터 다시 시작한다.
 async function load() {
   error.value = "";
+  liveReady = false; // 새로 받는 동안은 실시간 갱신을 멈춘다 (옛 코인·봉에 섞이는 것 방지)
   const mySeq = ++seq; // 이 호출의 번호표
   noMore = false;
   loadingMore = false;
@@ -162,6 +170,10 @@ async function load() {
     allRows = rows;
     draw(allRows);
     chart.timeScale().fitContent();
+    // 실시간 거래량의 기준: 방금 받은 마지막 봉의 거래량
+    volBase = rows.length ? rows[rows.length - 1].volume : 0;
+    accBase = null; // 첫 ticker가 오면 그때 누적값으로 정한다
+    liveReady = true;
   } catch (e) {
     error.value = "차트 데이터를 불러오지 못했습니다.";
   }
@@ -209,6 +221,7 @@ onMounted(() => {
   chart = createChart(container.value, {
     autoSize: true,
     timeScale: { timeVisible: true, secondsVisible: false },
+    crosshair: { mode: CrosshairMode.Normal }, // 가로선이 마우스를 자유롭게 따라간다
   });
   // applyOptions는 기존 옵션과 합쳐서(덮어쓰기 아님) 적용하므로 timeVisible은 유지된다.
   chart.applyOptions(chartColors(theme.theme));
@@ -219,6 +232,10 @@ onMounted(() => {
     borderVisible: false,
     wickUpColor: "#ef5350",
     wickDownColor: "#4285f4",
+  });
+  // 캔들이 아래 거래량 영역(아래 20%)과 겹치지 않게, 캔들 쪽 아래 여백을 25%로 늘린다.
+  candleSeries.priceScale().applyOptions({
+    scaleMargins: { top: 0.1, bottom: 0.25 },
   });
 
   volumeSeries = chart.addSeries(HistogramSeries, {
@@ -290,6 +307,52 @@ onMounted(() => {
 
 // 코인이나 봉이 바뀌면 다시 받아서 그린다.
 watch(() => [props.coin, props.timeframe], load);
+
+// ticker 메시지 하나로 마지막 봉(가격·거래량)을 갱신한다.
+// allRows의 마지막 행을 고친 뒤 draw()로 다시 그리면 캔들·거래량·지표선이 항상 같은 데이터를 쓴다.
+function applyTick(t) {
+  if (!t || !liveReady || allRows.length === 0) return;
+  // 다른 코인의 메시지는 무시한다 (코인을 바꾼 직후에 올 수 있다)
+  if (t.code !== "KRW-" + props.coin.toUpperCase()) return;
+
+  const step = TF_SEC[props.timeframe]; // 봉 길이(초)
+  const price = t.trade_price;
+  // 체결 시각이 속한 봉의 시작 시각. 업비트 봉은 UTC 0시부터 봉 길이 단위로 정렬돼 있다.
+  const bucket = Math.floor(t.trade_timestamp / 1000 / step) * step;
+  const lastSec = toSec(allRows[allRows.length - 1].candle_time);
+  if (bucket < lastSec) return; // 늦게 도착한 옛 메시지
+
+  if (bucket > lastSec) {
+    // 새 봉이 시작됐다: 현재가로 시가·고가·저가·종가를 채워 새로 붙인다
+    allRows.push({
+      candle_time: new Date(bucket * 1000).toISOString(),
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: 0,
+    });
+    volBase = 0;
+    accBase = t.acc_trade_volume;
+  }
+
+  const bar = allRows[allRows.length - 1];
+  bar.high = Math.max(bar.high, price);
+  bar.low = Math.min(bar.low, price);
+  bar.close = price;
+
+  // 거래량: 일봉은 당일 누적값이 곧 봉의 거래량. 1h·4h는 처음 받은 값 + 그 뒤 늘어난 누적량
+  if (accBase === null) accBase = t.acc_trade_volume;
+  bar.volume =
+    props.timeframe === "1d"
+      ? t.acc_trade_volume
+      : volBase + (t.acc_trade_volume - accBase);
+
+  draw(allRows);
+}
+
+// 부모가 새 ticker를 넘길 때마다(체결마다) 실행된다
+watch(() => props.tick, applyTick);
 
 // 테마가 바뀌면 차트 색과 선 색만 바꾼다. 캔들을 다시 받을 필요는 없다.
 watch(
