@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import CandleChart from "./components/CandleChart.vue";
-import { fetchCandles } from "./api/market";
+import { connectTicker } from "./api/ticker";
 import { makeQuote } from "./utils/quote";
 import { useThemeStore } from "./stores/theme";
 import { useIndicatorStore } from "./stores/indicators";
@@ -23,27 +23,29 @@ const currentCoin = computed(() => coins.find((c) => c.value === coin.value));
 
 // ── 코인별 시세 (현재가, 전일 대비) ──
 const quotes = ref({}); // { btc: {cls, price, pct, amount}, eth: {...} }
+const ticks = ref({}); // 코인별 최신 ticker 원본 메시지. 차트가 가격·거래량 갱신에 쓴다
 const showCoinMenu = ref(false); // 코인 목록이 펼쳐졌는지
 
-// 두 코인의 일봉 2개씩을 받아 시세를 계산한다. 한 코인이 실패해도 다른 코인은 보여 준다.
-async function loadQuotes() {
-  const entries = await Promise.all(
-    coins.map(async (c) => {
-      try {
-        return [c.value, makeQuote(await fetchCandles(c.value, "1d", 2))];
-      } catch (e) {
-        return [c.value, null];
-      }
-    }),
-  );
-  quotes.value = Object.fromEntries(entries);
-}
-onMounted(loadQuotes);
+// 웹소켓 연결 종료 함수. 화면이 사라질 때 호출한다.
+let stopTicker = null;
 
-// 목록을 펼칠 때마다 시세를 다시 받아서 최신 값을 보여 준다.
+onMounted(() => {
+  // ticker 메시지가 올 때마다 해당 코인의 시세만 갈아 끼운다.
+  // t.code는 "KRW-BTC" 모양이라 "KRW-"를 떼고 소문자로 바꾸면 coins의 value("btc")와 같다.
+  stopTicker = connectTicker((t) => {
+    const key = t.code.replace("KRW-", "").toLowerCase();
+    quotes.value[key] = makeQuote(t);
+    ticks.value[key] = t; // 차트용 원본
+  });
+});
+
+onUnmounted(() => {
+  if (stopTicker) stopTicker();
+});
+
+// 시세는 웹소켓이 계속 갱신하므로 펼칠 때 다시 받을 필요가 없다.
 function toggleCoinMenu() {
   showCoinMenu.value = !showCoinMenu.value;
-  if (showCoinMenu.value) loadQuotes();
 }
 function selectCoin(value) {
   coin.value = value;
@@ -202,7 +204,7 @@ const timeframes = [
         </button>
       </div>
 
-      <CandleChart :coin="coin" :timeframe="timeframe" />
+      <CandleChart :coin="coin" :timeframe="timeframe" :tick="ticks[coin]" />
 
       <!-- v-if가 false면 DOM에서 사라진다. @close는 자식의 emit("close")를 받는다 -->
       <IndicatorSettings v-if="showSettings" @close="showSettings = false" />
