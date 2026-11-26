@@ -246,6 +246,14 @@ body {
   display: block;
 }
 
+/* 화면 전체를 채우는 뿌리. 높이를 100svh로 확정해야 자식(.page → .panel → 차트)이 남는 높이를 flex로 나눠 가질 수 있다.
+   (style.css는 main.js에서 불러오지 않아 거기 쓴 #app 규칙은 적용되지 않는다) */
+#app {
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 버튼·입력칸은 기본으로 글꼴을 안 물려받아서(브라우저 기본 Arial) 본문 글꼴을 따르게 한다 */
 button,
 input,
@@ -257,11 +265,17 @@ textarea {
 
 <style scoped>
 .page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px;
+  flex: 1; /* #app 안에서 남는 높이를 전부 차지 */
+  min-height: 0; /* flex 자식이 내용보다 작아질 수 있게 */
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 .panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column; /* 헤더·칩은 위에 쌓이고 차트가 나머지를 채운다 */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -518,5 +532,34 @@ textarea {
 }
 .icon-btn:hover {
   color: var(--tab-active-bg);
+}
+
+/* 모바일(폭 640px 이하): 같은 화면을 좁은 폭에 맞게 재배치. 위 규칙을 덮어써야 하므로 맨 아래에 둔다 */
+@media (max-width: 640px) {
+  .page {
+    padding: 8px;
+  }
+  .panel {
+    padding: 10px;
+  }
+  .right {
+    width: 100%; /* 버튼 묶음이 아래 줄로 내려가 폭 전체를 쓴다 */
+  }
+  .tabs {
+    flex: 1;
+  }
+  .tabs button {
+    flex: 1;
+    padding: 10px 0; /* 터치하기 좋은 높이 */
+  }
+  .chips {
+    flex-wrap: nowrap;
+    overflow-x: auto; /* 칩이 넘치면 가로 스크롤 */
+  }
+  .chips button {
+    flex: none;
+    white-space: nowrap;
+    padding: 6px 12px;
+  }
 }
 </style>
