@@ -67,6 +67,28 @@ let ichiFill = null; // 구름을 칠하는 플러그인
 let rsiSeries = null; // RSI 선. 켜져 있을 때만 있고, 차트 아래 둘째 칸(pane)에 그린다
 let rsiFill = null; // 70~30 사이 연한 배경을 칠하는 플러그인
 let rsiLines = []; // 70·30 기준선(점선) 2개
+let rsiLast = null; // 가장 최근 RSI 값 (라벨의 기본 표시값)
+let rsiHover = null; // 마우스가 가리키는 시각의 RSI 값. 마우스가 차트 밖이면 null
+let resizeObs = null; // 차트 크기가 바뀌면 라벨 위치를 다시 잡는 감시자
+
+// RSI 라벨(RSI 칸 왼쪽 위 "RSI 14 56.37"). 차트 위에 HTML로 겹쳐 그린다.
+// top은 캔들 칸 높이 바로 아래다. 값은 마우스가 가리키는 시각 것이 있으면 그것, 없으면 가장 최근 값.
+const rsiLabel = ref({ show: false, top: 0, color: "", period: 14, value: "" });
+
+function refreshRsiLabel() {
+  if (!chart || !rsiSeries) {
+    rsiLabel.value.show = false;
+    return;
+  }
+  const v = rsiHover ?? rsiLast;
+  rsiLabel.value = {
+    show: v !== null,
+    top: chart.panes()[0].getHeight() + 6,
+    color: ind.rsiColor(theme.theme),
+    period: ind.rsi.period,
+    value: v === null ? "" : v.toFixed(2),
+  };
+}
 
 // ── 과거 이어받기용 상태 ──
 let allRows = []; // 지금까지 받은 원본 행 전체(오래된 순). 자바의 List<Row> 필드와 같다.
@@ -151,6 +173,9 @@ function applyRsi() {
       rsiFill = null;
       rsiLines = [];
     }
+    rsiLast = null;
+    rsiHover = null;
+    refreshRsiLabel();
     return;
   }
 
@@ -186,6 +211,8 @@ function applyRsi() {
     const panes = chart.panes();
     panes[0].setStretchFactor(4);
     panes[1].setStretchFactor(1);
+    // 칸 높이는 다음 그리기 때 확정되므로 한 프레임 뒤에 라벨 위치를 다시 잡는다
+    requestAnimationFrame(refreshRsiLabel);
   }
 
   const data = rsi(lastCandles, r.period);
@@ -198,6 +225,8 @@ function applyRsi() {
   // 기준선 색은 차트 글자색(모드별)을 쓴다
   const lineColor = palettes[theme.theme].text;
   rsiLines.forEach((l) => l.applyOptions({ color: lineColor }));
+  rsiLast = data.length ? data[data.length - 1].value : null;
+  refreshRsiLabel();
 }
 
 // 받아 둔 행(rows)을 차트와 지표선에 반영한다. load와 loadMore가 같이 쓴다.
@@ -372,6 +401,20 @@ onMounted(() => {
     if (range && range.from < 20) loadMore();
   });
 
+  // 마우스가 가리키는 시각의 RSI 값을 라벨에 보여 준다. 차트 밖으로 나가면 seriesData가 비어 최근 값으로 돌아간다.
+  chart.subscribeCrosshairMove((param) => {
+    if (!rsiSeries) return;
+    const d = param.seriesData.get(rsiSeries);
+    const next = d ? d.value : null;
+    if (next === rsiHover) return;
+    rsiHover = next;
+    refreshRsiLabel();
+  });
+
+  // 창 크기가 바뀌면 칸 높이가 바뀌므로 라벨 위치를 다시 잡는다
+  resizeObs = new ResizeObserver(refreshRsiLabel);
+  resizeObs.observe(container.value);
+
   load(); // 선 시리즈를 다 만든 뒤에 데이터를 넣는다
 });
 
@@ -472,6 +515,7 @@ watch(
 );
 
 onUnmounted(() => {
+  resizeObs?.disconnect();
   chart?.remove();
   chart = null;
 });
@@ -483,6 +527,26 @@ onUnmounted(() => {
     <p v-if="error">{{ error }}</p>
     <!-- 차트가 그려질 자리. 높이 고정 대신 flex: 1, 모바일에서 너무 작아지지 않게 min-height만 둔다.
          autoSize: true라 이 칸 크기가 바뀌면 차트가 알아서 다시 맞춘다. -->
-    <div ref="container" style="flex: 1; min-height: 320px; width: 100%"></div>
+    <div style="position: relative; flex: 1; min-height: 320px; display: flex">
+      <div ref="container" style="flex: 1; width: 100%"></div>
+      <!-- RSI 칸 왼쪽 위 라벨. 마우스 이벤트는 차트로 통과시킨다(pointer-events: none) -->
+      <div
+        v-if="rsiLabel.show"
+        :style="{
+          position: 'absolute',
+          left: '10px',
+          top: rsiLabel.top + 'px',
+          zIndex: 3,
+          pointerEvents: 'none',
+          fontSize: '12px',
+          color: 'var(--muted)',
+        }"
+      >
+        RSI {{ rsiLabel.period }}
+        <b :style="{ color: rsiLabel.color, marginLeft: '4px' }">{{
+          rsiLabel.value
+        }}</b>
+      </div>
+    </div>
   </div>
 </template>
