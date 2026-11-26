@@ -398,9 +398,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div>
+  <!-- 부모(.panel) 안에서 남는 높이를 차지하는 래퍼 -->
+  <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
     <p v-if="error">{{ error }}</p>
-    <!-- 차트가 그려질 자리. 높이를 안 주면 0이라 아무것도 안 보인다. -->
-    <div ref="container" style="width: 100%; height: 500px"></div>
+    <!-- 차트가 그려질 자리. 높이 고정 대신 flex: 1, 모바일에서 너무 작아지지 않게 min-height만 둔다.
+         autoSize: true라 이 칸 크기가 바뀌면 차트가 알아서 다시 맞춘다. -->
+    <div ref="container" style="flex: 1; min-height: 320px; width: 100%"></div>
   </div>
 </template>
