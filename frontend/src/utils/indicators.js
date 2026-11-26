@@ -39,6 +39,13 @@ export const BB_DEFAULT = {
   light: "#00838f",
 };
 
+// RSI 기본값. 업계 표준 길이 14. 색은 모드별 기본색(보라 계열, 이동평균·볼린저 색과 안 겹침).
+export const RSI_DEFAULT = {
+  period: 14,
+  dark: "#b388ff",
+  light: "#7e57c2",
+};
+
 // 볼린저밴드 계산: 중간선 = period개 종가의 평균, 위/아래선 = 중간선 ± mult × 표준편차.
 // candles: 오래된 순. 결과: { upper, middle, lower } 각각 [{ time, value }]
 // 앞쪽 period-1개는 데이터가 부족해서 결과에서 뺀다 (sma와 같은 규칙).
@@ -114,4 +121,40 @@ export function ichimoku(candles, p, stepSec) {
     }));
 
   return { tenkan, kijun, spanA, spanB, cloud };
+}
+
+// RSI(상대강도지수): 최근 오른 폭과 내린 폭의 비율로 과열(70↑)·침체(30↓)를 보는 지표.
+// 백엔드 지표 판정과 같은 Wilder 평활 방식이라 값이 일치해야 한다. 표준 길이는 14.
+// candles: [{ time, close, ... }] 오래된 순. 결과: [{ time, value }] (value는 0~100)
+// 앞쪽 period개는 평균을 낼 데이터가 부족해서 결과에서 뺀다.
+export function rsi(candles, period) {
+  const out = [];
+  if (candles.length <= period) return out; // 데이터가 모자라면 빈 배열
+
+  // 1) 첫 period개의 변화량으로 평균 상승폭(avgGain)·평균 하락폭(avgLoss)의 시작값을 만든다.
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = candles[i].close - candles[i - 1].close; // 전 봉 대비 변화
+    if (diff >= 0) avgGain += diff;
+    else avgLoss -= diff; // 하락폭은 양수로 쌓는다
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  // RS = 평균상승/평균하락, RSI = 100 - 100/(1+RS). 하락이 하나도 없으면(avgLoss=0) 100으로 처리한다.
+  const toRsi = () =>
+    avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  out.push({ time: candles[period].time, value: toRsi() });
+
+  // 2) 그다음 봉부터는 Wilder 평활: 새 평균 = (이전 평균 × (period-1) + 이번 값) / period
+  for (let i = period + 1; i < candles.length; i++) {
+    const diff = candles[i].close - candles[i - 1].close;
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out.push({ time: candles[i].time, value: toRsi() });
+  }
+  return out;
 }

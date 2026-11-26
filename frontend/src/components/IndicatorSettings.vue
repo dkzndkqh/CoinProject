@@ -8,8 +8,8 @@ const ind = useIndicatorStore();
 const theme = useThemeStore();
 const emit = defineEmits(["close"]);
 
-const tab = ref("ma"); // 현재 탭: "ma" | "bb" | "ichi"
-const openKey = ref(null); // 선 두께·모양 팝업이 열린 줄: 0~4(이동평균 슬롯) | "bb" | null
+const tab = ref("ma"); // 현재 탭: "ma" | "bb" | "ichi" | "rsi"
+const openKey = ref(null); // 선 두께·모양 팝업이 열린 줄: 0~4(이동평균 슬롯) | "bb" | "rsi" | null
 
 // 선 모양 숫자(0,1,2) -> CSS border 모양 이름. 인덱스가 곧 차트의 lineStyle 값이다.
 const CSS_STYLE = ["solid", "dotted", "dashed"];
@@ -56,7 +56,8 @@ function resetCurrent() {
   openKey.value = null;
   if (tab.value === "ma") ind.resetMa();
   else if (tab.value === "bb") ind.resetBb();
-  else ind.resetIchi();
+  else if (tab.value === "ichi") ind.resetIchi();
+  else ind.resetRsi();
 }
 </script>
 
@@ -80,6 +81,9 @@ function resetCurrent() {
         <button :class="{ active: tab === 'ichi' }" @click="tab = 'ichi'">
           일목 구름
         </button>
+        <button :class="{ active: tab === 'rsi' }" @click="tab = 'rsi'">
+          RSI
+        </button>
       </div>
 
       <div class="sect">
@@ -89,9 +93,13 @@ function resetCurrent() {
         <p v-else-if="tab === 'bb'">
           가격이 움직이는 범위를 보여 주는 위·중간·아래 3개 선입니다.
         </p>
-        <p v-else>
+        <p v-else-if="tab === 'ichi'">
           전환선·기준선과 구름으로 추세를 보는 지표입니다. 구름은 마지막 캔들
           앞쪽으로 나갑니다.
+        </p>
+        <p v-else>
+          최근 상승·하락 폭의 비율로 과열(70 이상)·침체(30 이하)를 보는
+          지표입니다. 70·30 기준선은 고정입니다.
         </p>
         <button class="reset" @click.stop="resetCurrent">
           <span>↺</span>기본값으로 초기화
@@ -306,7 +314,7 @@ function resetCurrent() {
       </div>
 
       <!-- 일목 탭: 켜기 + 기간 3개. 색은 고정이라 고르는 칸이 없다 -->
-      <div class="card" v-else>
+      <div class="card" v-else-if="tab === 'ichi'">
         <div class="frow">
           <label>표시</label>
           <label class="sw">
@@ -355,10 +363,94 @@ function resetCurrent() {
         </div>
       </div>
 
+      <!-- RSI 탭: 볼린저처럼 세로 폼 (표시, 길이, 색상, 두께·모양) -->
+      <div class="card" v-else>
+        <div class="frow">
+          <label>표시</label>
+          <label class="sw">
+            <input type="checkbox" v-model="ind.rsi.on" />
+            <i></i>
+          </label>
+        </div>
+        <div class="frow">
+          <label>길이<small>평균을 낼 봉 개수</small></label>
+          <div class="num">
+            <input
+              type="number"
+              min="1"
+              max="500"
+              :value="ind.rsi.period"
+              @change="setPeriod(ind.rsi, $event)"
+            />
+            <span>봉</span>
+          </div>
+        </div>
+        <div class="frow">
+          <label>색상</label>
+          <input
+            class="color left"
+            type="color"
+            title="선 색상"
+            :value="ind.rsiColor(theme.theme)"
+            @input="ind.rsi.color = $event.target.value"
+          />
+        </div>
+        <div class="frow">
+          <label>두께·모양</label>
+          <div class="anchor">
+            <button
+              class="linebtn left"
+              :class="{ open: openKey === 'rsi' }"
+              title="선 두께·모양"
+              @click.stop="togglePop('rsi')"
+            >
+              <span
+                class="ln"
+                :style="{
+                  borderTopWidth: ind.rsi.width + 'px',
+                  borderTopStyle: CSS_STYLE[ind.rsi.style],
+                }"
+              ></span
+              >▾
+            </button>
+            <div class="pop" v-if="openKey === 'rsi'" @click.stop>
+              <p class="lbl">선 두께</p>
+              <div class="pk">
+                <button
+                  v-for="w in LINE_WIDTHS"
+                  :key="w"
+                  :class="{ sel: ind.rsi.width === w }"
+                  @click="ind.rsi.width = w"
+                >
+                  <span class="ln" :style="{ borderTopWidth: w + 'px' }"></span>
+                </button>
+              </div>
+              <p class="lbl">선 모양</p>
+              <div class="pk">
+                <button
+                  v-for="st in LINE_STYLES"
+                  :key="st"
+                  :class="{ sel: ind.rsi.style === st }"
+                  @click="ind.rsi.style = st"
+                >
+                  <span
+                    class="ln"
+                    :style="{
+                      borderTopWidth: '2px',
+                      borderTopStyle: CSS_STYLE[st],
+                    }"
+                  ></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <p class="foot">
         여기서 바꾼 값은 차트 선에만 적용됩니다. 매수·매도 판정은 표준값(이동평균
-        5/20/60/120/200, 볼린저 20/2, 일목 9/26/52) 기준입니다. 일목의 선 색은
-        고정입니다.
+        5/20/60/120/200, 볼린저 20/2, 일목 9/26/52, RSI 14) 기준입니다. 일목의 선
+        색은 고정입니다.
       </p>
     </div>
   </div>

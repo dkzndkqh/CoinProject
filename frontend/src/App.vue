@@ -202,6 +202,11 @@ const timeframes = [
           <i style="background: #ef5350"></i>일목 구름
           {{ ind.ichi.tenkan }}/{{ ind.ichi.kijun }}/{{ ind.ichi.senkouB }}
         </button>
+
+        <button :class="{ on: ind.rsi.on }" @click="ind.toggleRsi()">
+          <i :style="{ background: ind.rsiColor(theme.theme) }"></i>RSI
+          {{ ind.rsi.period }}
+        </button>
       </div>
 
       <CandleChart :coin="coin" :timeframe="timeframe" :tick="ticks[coin]" />
