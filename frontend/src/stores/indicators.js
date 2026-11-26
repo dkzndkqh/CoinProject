@@ -4,6 +4,7 @@ import {
   BB_DEFAULT,
   ICHI_DEFAULT,
   MA_DEFAULTS,
+  RSI_DEFAULT,
   LINE_WIDTHS,
   LINE_STYLES,
 } from "../utils/indicators";
@@ -11,6 +12,7 @@ import {
 const KEY = "chartMaSettings";
 const BB_KEY = "chartBbSettings";
 const ICHI_KEY = "chartIchiSettings";
+const RSI_KEY = "chartRsiSettings";
 
 // 기본 설정 5슬롯을 만든다. 호출할 때마다 새 객체를 만들어서 기본값 원본이 수정되지 않게 한다.
 // 슬롯 모양: { period: 기간, color: 사용자가 고른 색(없으면 null), on: 켜짐 여부 }
@@ -98,6 +100,7 @@ export const useIndicatorStore = defineStore("indicators", () => {
   const ma = ref(loadSaved()); // 5슬롯 배열. 순서가 곧 슬롯 번호(0~4)
   const bb = ref(loadBb()); // { period, mult, color, on }
   const ichi = ref(loadIchi()); // { on, tenkan, kijun, senkouB }
+  const rsi = ref(loadRsi()); // { period, color, on, width, style }
   // 바뀔 때마다 브라우저에 저장 (deep: 배열 안쪽 변화도 감지)
   watch(
     ma,
@@ -124,6 +127,16 @@ export const useIndicatorStore = defineStore("indicators", () => {
     (v) => {
       try {
         localStorage.setItem(ICHI_KEY, JSON.stringify(v));
+      } catch (e) {}
+    },
+    { deep: true },
+  );
+
+  watch(
+    rsi,
+    (v) => {
+      try {
+        localStorage.setItem(RSI_KEY, JSON.stringify(v));
       } catch (e) {}
     },
     { deep: true },
@@ -167,6 +180,19 @@ export const useIndicatorStore = defineStore("indicators", () => {
     ichi.value = makeIchiDefaults();
   }
 
+  function toggleRsi() {
+    rsi.value.on = !rsi.value.on;
+  }
+
+  // RSI의 현재 색 (사용자 색이 없으면 모드별 기본색)
+  function rsiColor(mode) {
+    return rsi.value.color ?? RSI_DEFAULT[mode];
+  }
+
+  function resetRsi() {
+    rsi.value = makeRsiDefaults();
+  }
+
   return {
     ma,
     toggleMa,
@@ -179,6 +205,10 @@ export const useIndicatorStore = defineStore("indicators", () => {
     ichi,
     toggleIchi,
     resetIchi,
+    rsi,
+    toggleRsi,
+    rsiColor,
+    resetRsi,
   };
 });
 
@@ -205,4 +235,38 @@ function loadIchi() {
     if (isIchiValid(s)) return s;
   } catch (e) {}
   return makeIchiDefaults();
+}
+
+// RSI 기본 설정: 켜짐 + 표준 길이 14. 슬롯 하나라서 객체다.
+function makeRsiDefaults() {
+  return {
+    period: RSI_DEFAULT.period,
+    color: null, // null이면 모드별 기본색
+    on: true,
+    width: 1,
+    style: 0,
+  };
+}
+
+// 저장된 값 검사: 길이는 정수 1~500, 두께·모양은 허용 목록, 색은 null 또는 문자열
+function isRsiValid(s) {
+  return (
+    s !== null &&
+    typeof s === "object" &&
+    Number.isInteger(s.period) &&
+    s.period >= 1 &&
+    s.period <= 500 &&
+    typeof s.on === "boolean" &&
+    LINE_WIDTHS.includes(s.width) &&
+    LINE_STYLES.includes(s.style) &&
+    (s.color === null || typeof s.color === "string")
+  );
+}
+
+function loadRsi() {
+  try {
+    const s = JSON.parse(localStorage.getItem(RSI_KEY));
+    if (isRsiValid(s)) return s;
+  } catch (e) {}
+  return makeRsiDefaults();
 }
